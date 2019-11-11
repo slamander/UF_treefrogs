@@ -1,0 +1,2044 @@
+---
+title: "hierarchical models of Plethodontid ecology"
+author: "Alex Baecher"
+date: "August 15, 2017"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r, Call packages unmarked and AICcmodaverage}
+library(unmarked)
+library(AICcmodavg)
+```
+
+```{r, Uploading Salamander count and occupancy, & covar database}
+Database=read.csv("Plethodon LCW.csv", header=T)
+Database_occu=read.csv("Plethodon LCW presabs.csv", header=T)
+names(Database)
+```
+
+```{r, setting K for pcount models}
+(K_rich <- max(Database[,14:17], na.rm = TRUE) + 20)
+(K_kent <- max(Database[,10:13], na.rm = TRUE) + 20)
+(K_glut <- max(Database[,6:9], na.rm = TRUE) + 20)
+```
+
+
+```{r, Extracting site Covariates}
+
+CAN=Database[1:40,2]
+ASP=Database[1:40,3]
+ELV=Database[1:40,4]
+MST=Database[1:40,5]
+TPI=Database[1:40,42]
+VEG=Database[1:40,43]
+RAD=Database[1:40,44]
+```
+
+
+```{r, Extracting Detection Covariates}
+CWD=array(Database[1:40,18:21])
+ROC=array(Database[1:40,22:25])
+DAY=array(Database[1:40,34:37])
+TOD=array(Database[1:40,38:41])
+LUX=array(Database[1:40,30:33])
+LLD=array(Database[1:40,26:29])
+```
+# KEY TO NAMES
+# ______________site covariates_____________________
+# ASP = Beer's transformed Aspect (continuous, 0=SW -> 2=NW)
+# CAN = Percent canopy closed (from photography)
+# MST = Average percent soil moister from each survey
+# ELV = Elevation (m)
+# TPI = Topographic position index (GIS)
+# RAD = Direct Solar Radiation (GIS)
+# VEG = Normalized Difference Vegetation Index (GIS)
+________________detection covariates________________
+# ROC = # of Rocks in transect
+# TOD = Time of Day
+# CWD = Coarse Woody Debris (cm^3)
+# DAY = Julian Date
+# LLD = Leaf Litter Depth (cm)
+# LUX = Luxometer reading (who the fuck knows the units)
+
+```{r, converting covariate data to format that will match the detection probability output}
+# Detection Covariates:
+TOD.stack.occ <- c(TOD[,1], TOD[,2], TOD[,3], TOD[,4])
+CWD.stack.occ <- c(CWD[,1], CWD[,2], CWD[,3], CWD[,4])
+DAY.stack.occ <- c(DAY[,1], DAY[,2], DAY[,3], DAY[,4])
+ROC.stack.occ <- c(ROC[,1], ROC[,2], ROC[,3], ROC[,4])
+LUX.stack.occ <- c(LUX[,1], LUX[,2], LUX[,3], LUX[,4])
+LLD.stack.occ <- c(LLD[,1], LLD[,2], LLD[,3], LLD[,4])
+```
+
+```{r, Isolating Species count data}
+P_glutinosus_count=array(Database[1:40,6:9])
+P_richmondi_count=array(Database[1:40,14:17])
+P_kentucki_count=array(Database[1:40,10:13])
+```
+
+
+```{r, Create unmarked N-mixture model frames for each species}
+P_richmondi_pcount=unmarkedFramePCount(
+  y=P_richmondi_count, 
+  obsCovs=list(CWD=CWD, ROC=ROC, DAY=DAY, TOD=TOD, LUX=LUX, LLD=LLD), 
+  siteCovs=data.frame(ELV=ELV, MST=MST, ASP=ASP, CAN=CAN, RAD=RAD, VEG=VEG, TPI=TPI))  
+P_kentucki_pcount=unmarkedFramePCount(
+  y=P_kentucki_count, 
+  obsCovs=list(CWD=CWD, ROC=ROC, DAY=DAY, TOD=TOD, LUX=LUX, LLD=LLD), 
+  siteCovs=data.frame(ELV=ELV, MST=MST, ASP=ASP, CAN=CAN, RAD=RAD, VEG=VEG, TPI=TPI))  
+P_glutinosus_pcount=unmarkedFramePCount(
+  y=P_glutinosus_count, 
+  obsCovs=list(CWD=CWD, ROC=ROC, DAY=DAY, TOD=TOD, LUX=LUX, LLD=LLD), 
+  siteCovs=data.frame(ELV=ELV, MST=MST, ASP=ASP, CAN=CAN, RAD=RAD, VEG=VEG, TPI=TPI)) 
+```
+
+```{r, Standardize all covariates (obs -> Z-scores), results="hide"}
+obsCovs(P_glutinosus_pcount)<-scale(obsCovs(P_glutinosus_pcount))
+siteCovs(P_glutinosus_pcount)<-scale(siteCovs(P_glutinosus_pcount))
+summary(P_glutinosus_pcount)
+
+obsCovs(P_richmondi_pcount)<-scale(obsCovs(P_richmondi_pcount))
+siteCovs(P_richmondi_pcount)<-scale(siteCovs(P_richmondi_pcount))
+summary(P_richmondi_pcount)
+
+obsCovs(P_kentucki_pcount)<-scale(obsCovs(P_kentucki_pcount))
+siteCovs(P_kentucki_pcount)<-scale(siteCovs(P_kentucki_pcount))
+summary(P_kentucki_pcount)
+```
+
+```{r, Isolate species occurance histories }
+P_glutinosus=array(Database_occu[1:40,6:9])
+P_richmondi=array(Database_occu[1:40,14:17])
+P_kentucki=array(Database_occu[1:40,10:13])
+```
+
+```{r, Construct unmarked occupancy model frames}
+P_glutinosus_occu=unmarkedFrameOccu(y=P_glutinosus, 
+              obsCovs=list(CWD=CWD, ROC=ROC, DAY=DAY, TOD=TOD, LUX=LUX, LLD=LLD),
+              siteCovs=data.frame(ELV=ELV, MST=MST, ASP=ASP, CAN=CAN, RAD=RAD, VEG=VEG, TPI=TPI))
+P_richmondi_occu=unmarkedFrameOccu(y=P_richmondi, 
+              obsCovs=list(CWD=CWD, ROC=ROC, DAY=DAY, TOD=TOD, LUX=LUX, LLD=LLD),                 
+              siteCovs=data.frame(ELV=ELV, MST=MST, ASP=ASP, CAN=CAN, RAD=RAD, VEG=VEG, TPI=TPI))
+P_kentucki_occu=unmarkedFrameOccu(y=P_kentucki, 
+              obsCovs=list(CWD=CWD, ROC=ROC, DAY=DAY, TOD=TOD, LUX=LUX, LLD=LLD),                 
+              siteCovs=data.frame(ELV=ELV, MST=MST, ASP=ASP, CAN=CAN, RAD=RAD, VEG=VEG, TPI=TPI))
+```
+
+```{r, Standardize all Covars (obs -> Z-scores) to improve estimation , results="hide"}
+obsCovs(P_glutinosus_occu)<-scale(obsCovs(P_glutinosus_occu))
+siteCovs(P_glutinosus_occu)<-scale(siteCovs(P_glutinosus_occu))
+summary(P_glutinosus_occu) 
+
+obsCovs(P_richmondi_occu)<-scale(obsCovs(P_richmondi_occu))
+siteCovs(P_richmondi_occu)<-scale(siteCovs(P_richmondi_occu))
+summary(P_richmondi_occu)
+
+obsCovs(P_kentucki_occu)<-scale(obsCovs(P_kentucki_occu))
+siteCovs(P_kentucki_occu)<-scale(siteCovs(P_kentucki_occu))
+summary(P_kentucki_occu)
+```
+
+```{r, examine data for correlations}
+site.data<-data.frame(ELV, MST, ASP, CAN)
+(pairwise.site.pearson<-cor(site.data, use="pairwise.complete.obs", method="pearson"))
+(complete.site.pearson<-cor(site.data, use="complete.obs", method="pearson"))
+(all.site.pearson<-cor(site.data, use="all.obs", method="pearson"))
+# These all produce the same results.... 
+LUX.stack<-c(LUX[,1],LUX[,2],LUX[,3],LUX[,4])
+LLD.stack<-c(LLD[,1], LLD[,2], LLD[,3], LLD[,4])
+TOD.stack<-c(TOD[,1], TOD[,2], TOD[,3], TOD[,4])
+DAY.stack<-c(DAY[,1], DAY[,2], DAY[,3], DAY[,4])
+CWD.stack<-c(CWD[,1], CWD[,2], CWD[,3], CWD[,4])
+ROC.stack<-c(ROC[,1], ROC[,2], ROC[,3], ROC[,4])
+sam.data<-data.frame(LUX.stack,LLD.stack,TOD.stack,DAY.stack,CWD.stack,ROC.stack)
+cor(sam.data, use="all.obs", method="pearson")
+```
+
+## ------------ Begin: P. richmondi ------------ ##
+```{r, Begin N-mixture model construction with P. richmondi detection (Pcount), results="hide"}
+p_dot_lam_dot_richmondi=pcount(~1 ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_ROC_lam_dot_richmondi=pcount(~ROC ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_LUX_lam_dot_richmondi=pcount(~LUX ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_DAY_lam_dot_richmondi=pcount(~DAY ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_dot_richmondi=pcount(~TOD ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_LLD_lam_dot_richmondi=pcount(~LLD ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_CWD_lam_dot_richmondi=pcount(~CWD ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_ROC_CWD_lam_dot_richmondi=pcount(~ROC+CWD ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_DAY_lam_dot_richmondi=pcount(~TOD+DAY ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_ROC_TOD_lam_dot_richmondi=pcount(~ROC+TOD ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_CWD_TOD_lam_dot_richmondi=pcount(~CWD+TOD ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_CWD_DAY_lam_dot_richmondi=pcount(~CWD+DAY ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_CWD_LUX_lam_dot_richmondi=pcount(~CWD+LUX ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_ROC_LUX_DAY_CWD_TOD_LLD_lam_dot_richmondi=pcount(~CWD+LUX+ROC+TOD+LLD+DAY ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+```
+# Create candidate model list for AIC selection of P. richmondi detection (Pcount)
+```{r, Create candidate model list for AIC selection of P. richmondi detection (Pcount)}
+richmondi.det.list=fitList(
+  "p(.)lam(.)"                       =p_dot_lam_dot_richmondi,
+  "p(ROC)lam(.)"                     =p_ROC_lam_dot_richmondi,
+  "p(LUX)lam(.)"                     =p_LUX_lam_dot_richmondi,
+  "p(DAY)lam(.)"                     =p_DAY_lam_dot_richmondi,
+  "p(TOD)lam(.)"                     =p_TOD_lam_dot_richmondi,
+  "p(LLD)lam(.)"                     =p_LLD_lam_dot_richmondi,
+  "p(CWD)lam(.)"                     =p_CWD_lam_dot_richmondi,
+  "p(ROC+CWD)lam(.)"                 =p_ROC_CWD_lam_dot_richmondi,
+  "p(TOD+DAY)lam(.)"                 =p_TOD_DAY_lam_dot_richmondi,
+  "p(ROC+TOD)lam(.)"                 =p_ROC_TOD_lam_dot_richmondi,
+  "p(CWD+TOD)lam(.)"                 =p_CWD_TOD_lam_dot_richmondi,
+  "p(CWD+DAY)lam(.)"                 =p_CWD_DAY_lam_dot_richmondi,
+  "p(CWD+LUX)lam(.)"                 =p_CWD_LUX_lam_dot_richmondi,
+  "p(ROC+LUX+DAY+CWD+TOD+LLD) lam(.)"=p_ROC_LUX_DAY_CWD_TOD_LLD_lam_dot_richmondi)
+modSel(richmondi.det.list)
+```
+# beta estimates P.richmondi occu detection
+```{r, beta estimates P.richmondi occu detection}
+P.richmondi_det_lam_list=list(
+p_dot_lam_dot_richmondi,
+p_ROC_lam_dot_richmondi,
+p_LUX_lam_dot_richmondi,
+p_DAY_lam_dot_richmondi,
+p_TOD_lam_dot_richmondi,
+p_LLD_lam_dot_richmondi,
+p_CWD_lam_dot_richmondi,
+p_ROC_CWD_lam_dot_richmondi,
+p_TOD_DAY_lam_dot_richmondi,
+p_ROC_TOD_lam_dot_richmondi,
+p_CWD_TOD_lam_dot_richmondi,
+p_CWD_DAY_lam_dot_richmondi,
+p_CWD_LUX_lam_dot_richmondi,
+p_ROC_LUX_DAY_CWD_TOD_LLD_lam_dot_richmondi)
+
+P.richmondi_det_lam_list_names=c(
+"p(.)lam(.)",
+"p(ROC)lam(.)",            
+"p(LUX)lam(.)",               
+"p(DAY)lam(.)",                 
+"p(TOD)lam(.)",                
+"p(LLD)lam(.)",                   
+"p(CWD)lam(.)",              
+"p(ROC + CWD)lam(.)",             
+"p(TOD + DAY)lam(.)",           
+"p(ROC + TOD)lam(.)",              
+"p(CWD + TOD)lam(.)",            
+"p(CWD + DAY)lam(.)",           
+"p(CWD + LUX)lam(.)",         
+"p(ROC + LUX + DAY + CWD + TOD + LLD) lam(.)")
+?modavg
+modavg(cand.set = P.richmondi_det_lam_list, 
+             modnames = P.richmondi_det_lam_list_names, 
+             parm="TOD", parm.type="detect")
+modavg(cand.set = P.richmondi_det_lam_list, 
+             modnames = P.richmondi_det_lam_list_names, 
+             parm="CWD", parm.type="detect")
+modavg(cand.set = P.richmondi_det_lam_list, 
+             modnames = P.richmondi_det_lam_list_names, 
+             parm="ROC", parm.type="detect")
+modavg(cand.set = P.richmondi_det_lam_list, 
+             modnames = P.richmondi_det_lam_list_names, 
+             parm="LLD", parm.type="detect")
+modavg(cand.set = P.richmondi_det_lam_list, 
+             modnames = P.richmondi_det_lam_list_names, 
+             parm="LUX", parm.type="detect")
+modavg(cand.set = P.richmondi_det_lam_list, 
+             modnames = P.richmondi_det_lam_list_names, 
+             parm="DAY", parm.type="detect")
+```
+
+# Test three alternative abundance models: Poisson (default), negative binomial (NB), and zero-inflated Poisson (ZIP)
+```{r, Test three alternative abundance models: Poisson (default), negative binomial (NB), and zero-inflated Poisson (ZIP)}
+p_TOD_lam_ASP_richmondi_Poisson=pcount(~TOD+CWD ~ASP, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_ASP_richmondi_NB=pcount(~TOD+CWD ~ASP, data=P_richmondi_pcount, mixture="NB", K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_ASP_richmondi_ZIP=pcount(~TOD+CWD ~ASP, data=P_richmondi_pcount, mixture="ZIP", K=K_rich, control=list(trace=T, REPORT=100))
+cbind(AIC.P<-p_TOD_lam_ASP_richmondi_Poisson@AIC, AIC.NB<-p_TOD_lam_ASP_richmondi_NB@AIC, AIC.ZIP<-p_TOD_lam_ASP_richmondi_ZIP@AIC)
+# Poisson takes the cake
+```
+
+
+
+# First round: Construct single site covar N-mixture models with TOD detection covars
+```{r, Construct N-mixture models with TOD detection covars,  results="hide"}
+p_dot_lam_dot_richmondi            =pcount(~1 ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_dot_lam_CAN_richmondi            =pcount(~1 ~CAN, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_dot_lam_ELV_richmondi            =pcount(~1 ~ELV, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_dot_lam_ASP_richmondi            =pcount(~1 ~ASP, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_dot_lam_MST_richmondi            =pcount(~1 ~MST, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_dot_lam_VEG_richmondi            =pcount(~1 ~VEG, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_dot_lam_TPI_richmondi            =pcount(~1 ~TPI, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_dot_lam_RAD_richmondi            =pcount(~1 ~RAD, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+
+p_TOD_lam_dot_richmondi            =pcount(~TOD ~1, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_CAN_richmondi            =pcount(~TOD ~CAN, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_ASP_richmondi            =pcount(~TOD ~ASP, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_ELV_richmondi            =pcount(~TOD ~ELV, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_MST_richmondi            =pcount(~TOD ~MST, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_VEG_richmondi            =pcount(~TOD ~VEG, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_TPI_richmondi            =pcount(~TOD ~TPI, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_RAD_richmondi            =pcount(~TOD ~RAD, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+
+p_TOD_lam_CAN_MST_ELV_ASP_VEG_TPI_RAD_richmondi=pcount(~TOD ~CAN+MST+ELV+ASP+VEG+TPI+RAD, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+```
+
+```{r, AIC Model Selection for P. richmondi N-mixture models}
+richmondi.pcount.list<-fitList(
+  "p(.)lam(.)"                =p_dot_lam_dot_richmondi,
+  "p(.)lam(CAN)"              =p_dot_lam_CAN_richmondi,
+  "p(.)lam(ELV)"              =p_dot_lam_ELV_richmondi,
+  "p(.)lam(ASP)"              =p_dot_lam_ASP_richmondi,
+  "p(.)lam(MST)"              =p_dot_lam_MST_richmondi,
+  "p(.)lam(VEG)"              =p_dot_lam_VEG_richmondi,
+  "p(.)lam(TPI)"              =p_dot_lam_TPI_richmondi,
+  "p(.)lam(RAD)"              =p_dot_lam_RAD_richmondi,
+
+  "p(TOD)lam(dot)"            =p_TOD_lam_dot_richmondi,
+  "p(TOD)lam(CAN)"            =p_TOD_lam_CAN_richmondi,
+  "p(TOD)lam(ASP)"            =p_TOD_lam_ASP_richmondi,
+  "p(TOD)lam(ELV)"            =p_TOD_lam_ELV_richmondi,
+  "p(TOD)lam(MST)"            =p_TOD_lam_MST_richmondi,
+  "p(TOD)lam(VEG)"            =p_TOD_lam_VEG_richmondi,
+  "p(TOD)lam(TPI)"            =p_TOD_lam_TPI_richmondi,
+  "p(TOD)lam(RAD)"            =p_TOD_lam_RAD_richmondi,
+
+  "p(TOD)lam(CAN+MST+ELV+ASP+VEG+RAD+TPI)" =p_TOD_lam_CAN_MST_ELV_ASP_VEG_TPI_RAD_richmondi)
+modSel(richmondi.pcount.list)
+```
+
+# beta estimates P.richmondi lambda
+```{r, beta estimates P.richmondi lambda}
+P.richmondi.lam.list=list(
+p_dot_lam_dot_richmondi,
+p_dot_lam_CAN_richmondi,
+p_dot_lam_ELV_richmondi,
+p_dot_lam_ASP_richmondi,
+p_dot_lam_MST_richmondi,
+p_dot_lam_VEG_richmondi,
+p_dot_lam_TPI_richmondi,
+p_dot_lam_RAD_richmondi,
+
+p_TOD_lam_dot_richmondi,
+p_TOD_lam_CAN_richmondi,
+p_TOD_lam_ASP_richmondi,
+p_TOD_lam_ELV_richmondi,
+p_TOD_lam_MST_richmondi,
+p_TOD_lam_VEG_richmondi,
+p_TOD_lam_TPI_richmondi,
+p_TOD_lam_RAD_richmondi,
+
+p_TOD_lam_CAN_MST_ELV_ASP_VEG_TPI_RAD_richmondi)
+
+P.richmondi.lam.list.name=c(
+  "p(.)lam(.)"                ,
+  "p(.)lam(CAN)"              ,
+  "p(.)lam(ELV)"              ,
+  "p(.)lam(ASP)"              ,
+  "p(.)lam(MST)"              ,
+  "p(.)lam(VEG)"              ,
+  "p(.)lam(TPI)"              ,
+  "p(.)lam(RAD)"              ,
+
+  "p(TOD)lam(dot)"            ,
+  "p(TOD)lam(CAN)"            ,
+  "p(TOD)lam(ASP)"            ,
+  "p(TOD)lam(ELV)"            ,
+  "p(TOD)lam(MST)"            ,
+  "p(TOD)lam(VEG)"            ,
+  "p(TOD)lam(TPI)"            ,
+  "p(TOD)lam(RAD)"            ,
+
+  "p(TOD)lam(CAN+MST+ELV+ASP+VEG+RAD+TPI)" )
+
+
+aictab(cand.set=P.richmondi.lam.list, modnames = P.richmondi.lam.list.name, sort=T)
+
+MST.beta.ric.pcount<-modavg(cand.set = P.richmondi.lam.list, 
+             modnames = P.richmondi.lam.list.name, 
+             parm="MST", parm.type="lambda")
+CAN.beta.ric.pcount<-modavg(cand.set = P.richmondi.lam.list, 
+             modnames = P.richmondi.lam.list.name, 
+             parm="CAN", parm.type="lambda")
+ASP.beta.ric.pcount<-modavg(cand.set = P.richmondi.lam.list, 
+             modnames = P.richmondi.lam.list.name, 
+             parm="ASP", parm.type="lambda")
+ELV.beta.ric.pcount<-modavg(cand.set = P.richmondi.lam.list, 
+             modnames = P.richmondi.lam.list.name, 
+             parm="ELV", parm.type="lambda")
+VEG.beta.ric.pcount<-modavg(cand.set = P.richmondi.lam.list, 
+             modnames = P.richmondi.lam.list.name, 
+             parm="VEG", parm.type="lambda")
+TPI.beta.ric.pcount<-modavg(cand.set = P.richmondi.lam.list, 
+             modnames = P.richmondi.lam.list.name, 
+             parm="TPI", parm.type="lambda")
+RAD.beta.ric.pcount<-modavg(cand.set = P.richmondi.lam.list, 
+             modnames = P.richmondi.lam.list.name, 
+             parm="RAD", parm.type="lambda")
+
+MST.beta.ric.pcount
+CAN.beta.ric.pcount
+ASP.beta.ric.pcount
+ELV.beta.ric.pcount
+VEG.beta.ric.pcount
+TPI.beta.ric.pcount
+RAD.beta.ric.pcount
+```
+
+# 2nd round of P. richmondi N-mixture models: include a two parameter model with MST and ASP
+```{r, Model Selection for P. richmondi N-mixture models}
+p_TOD_lam_ASP_MST_richmondi            =pcount(~TOD ~ASP+MST, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_ELV_MST_richmondi            =pcount(~TOD ~ELV+MST, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_CAN_MST_richmondi            =pcount(~TOD ~CAN+MST, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_VEG_MST_richmondi            =pcount(~TOD ~VEG+MST, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_TPI_MST_richmondi            =pcount(~TOD ~TPI+MST, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_RAD_MST_richmondi            =pcount(~TOD ~RAD+MST, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+
+p_TOD_lam_CAN_ASP_richmondi            =pcount(~TOD ~CAN+ASP, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_ELV_ASP_richmondi            =pcount(~TOD ~ELV+ASP, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_VEG_ASP_richmondi            =pcount(~TOD ~VEG+ASP, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_TPI_ASP_richmondi            =pcount(~TOD ~TPI+ASP, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+p_TOD_lam_RAD_ASP_richmondi            =pcount(~TOD ~RAD+ASP, data=P_richmondi_pcount, K=K_rich, control=list(trace=T, REPORT=100))
+
+
+richmondi.pcount.list.2<-fitList(
+  "p(.)lam(.)"                =p_dot_lam_dot_richmondi,
+  "p(.)lam(CAN)"              =p_dot_lam_CAN_richmondi,
+  "p(.)lam(ELV)"              =p_dot_lam_ELV_richmondi,
+  "p(.)lam(ASP)"              =p_dot_lam_ASP_richmondi,
+  "p(.)lam(MST)"              =p_dot_lam_MST_richmondi,
+  "p(.)lam(VEG)"              =p_dot_lam_VEG_richmondi,
+  "p(.)lam(TPI)"              =p_dot_lam_TPI_richmondi,
+  "p(.)lam(RAD)"              =p_dot_lam_RAD_richmondi,
+
+  "p(TOD)lam(dot)"            =p_TOD_lam_dot_richmondi,
+  "p(TOD)lam(CAN)"            =p_TOD_lam_CAN_richmondi,
+  "p(TOD)lam(ASP)"            =p_TOD_lam_ASP_richmondi,
+  "p(TOD)lam(ELV)"            =p_TOD_lam_ELV_richmondi,
+  "p(TOD)lam(MST)"            =p_TOD_lam_MST_richmondi,
+  "p(TOD)lam(VEG)"            =p_TOD_lam_VEG_richmondi,
+  "p(TOD)lam(TPI)"            =p_TOD_lam_TPI_richmondi,
+  "p(TOD)lam(RAD)"            =p_TOD_lam_RAD_richmondi,
+  
+  "p(TOD)lam(ASP+MST)"        =p_TOD_lam_ASP_MST_richmondi, 
+  
+  "p(TOD)lam(ELV+MST)"        =p_TOD_lam_ELV_MST_richmondi,
+  "p(TOD)lam(CAN+MST)"        =p_TOD_lam_CAN_MST_richmondi,  
+  "p(TOD)lam(VEG+MST)"        =p_TOD_lam_VEG_MST_richmondi,  
+  "p(TOD)lam(TPI+MST)"        =p_TOD_lam_TPI_MST_richmondi,  
+  "p(TOD)lam(RAD+MST)"        =p_TOD_lam_RAD_MST_richmondi,  
+
+  "p(TOD)lam(CAN+ASP)"        =p_TOD_lam_CAN_ASP_richmondi,
+  "p(TOD)lam(ELV+ASP)"        =p_TOD_lam_ELV_ASP_richmondi,
+  "p(TOD)lam(VEG+ASP)"        =p_TOD_lam_VEG_ASP_richmondi, 
+  "p(TOD)lam(TPI+ASP)"        =p_TOD_lam_TPI_ASP_richmondi,
+  "p(TOD)lam(RAD+ASP)"        =p_TOD_lam_RAD_ASP_richmondi,
+
+  "p(TOD)lam(CAN+MST+ELV+ASP+VEG+RAD+TPI)" =p_TOD_lam_CAN_MST_ELV_ASP_VEG_TPI_RAD_richmondi)
+modSel(richmondi.pcount.list.2)
+```
+
+# 2nd round of beta estimates for P. richmondi
+```{r, beta estimates of P.richmondi lambda}
+P.richmondi.lam.list.2=list(
+p_dot_lam_dot_richmondi,
+p_dot_lam_CAN_richmondi,
+p_dot_lam_ELV_richmondi,
+p_dot_lam_ASP_richmondi,
+p_dot_lam_MST_richmondi,
+p_dot_lam_VEG_richmondi,
+p_dot_lam_TPI_richmondi,
+p_dot_lam_RAD_richmondi,
+
+p_TOD_lam_dot_richmondi,
+p_TOD_lam_CAN_richmondi,
+p_TOD_lam_ASP_richmondi,
+p_TOD_lam_ELV_richmondi,
+p_TOD_lam_MST_richmondi,
+p_TOD_lam_VEG_richmondi,
+p_TOD_lam_TPI_richmondi,
+p_TOD_lam_RAD_richmondi,
+
+p_TOD_lam_ASP_MST_richmondi, 
+
+p_TOD_lam_ELV_MST_richmondi,
+p_TOD_lam_CAN_MST_richmondi,  
+p_TOD_lam_VEG_MST_richmondi,  
+p_TOD_lam_TPI_MST_richmondi,  
+p_TOD_lam_RAD_MST_richmondi,  
+
+p_TOD_lam_CAN_ASP_richmondi,
+p_TOD_lam_ELV_ASP_richmondi,
+p_TOD_lam_VEG_ASP_richmondi, 
+p_TOD_lam_TPI_ASP_richmondi,
+p_TOD_lam_RAD_ASP_richmondi,
+
+p_TOD_lam_CAN_MST_ELV_ASP_VEG_TPI_RAD_richmondi)
+
+P.richmondi.lam.list.name.2=c(
+  "p(.)lam(.)"                ,
+  "p(.)lam(CAN)"              ,
+  "p(.)lam(ELV)"              ,
+  "p(.)lam(ASP)"              ,
+  "p(.)lam(MST)"              ,
+  "p(.)lam(VEG)"              ,
+  "p(.)lam(TPI)"              ,
+  "p(.)lam(RAD)"              ,
+
+  "p(TOD)lam(dot)"            ,
+  "p(TOD)lam(CAN)"            ,
+  "p(TOD)lam(ASP)"            ,
+  "p(TOD)lam(ELV)"            ,
+  "p(TOD)lam(MST)"            ,
+  "p(TOD)lam(VEG)"            ,
+  "p(TOD)lam(TPI)"            ,
+  "p(TOD)lam(RAD)"            ,
+  
+  "p(TOD)lam(ASP+MST)"        , 
+  "p(TOD)lam(ELV+MST)"        ,
+  "p(TOD)lam(CAN+MST)"        ,  
+  "p(TOD)lam(VEG+MST)"        ,  
+  "p(TOD)lam(TPI+MST)"        ,  
+  "p(TOD)lam(RAD+MST)"        ,  
+
+  "p(TOD)lam(CAN+ASP)"        ,
+  "p(TOD)lam(ELV+ASP)"        ,
+  "p(TOD)lam(VEG+ASP)"        , 
+  "p(TOD)lam(TPI+ASP)"        ,
+  "p(TOD)lam(RAD+ASP)"        ,
+
+  "p(TOD)lam(CAN+MST+ELV+ASP+VEG+RAD+TPI)" )
+
+
+aictab(cand.set=P.richmondi.lam.list.2, modnames = P.richmondi.lam.list.name.2, sort=T)
+
+MST.beta.ric.pcount.2<-modavg(cand.set = P.richmondi.lam.list.2, 
+             modnames = P.richmondi.lam.list.name.2, 
+             parm="MST", parm.type="lambda")
+CAN.beta.ric.pcount.2<-modavg(cand.set = P.richmondi.lam.list.2, 
+             modnames = P.richmondi.lam.list.name.2, 
+             parm="CAN", parm.type="lambda")
+ASP.beta.ric.pcount.2<-modavg(cand.set = P.richmondi.lam.list.2, 
+             modnames = P.richmondi.lam.list.name.2, 
+             parm="ASP", parm.type="lambda")
+ELV.beta.ric.pcount.2<-modavg(cand.set = P.richmondi.lam.list.2, 
+             modnames = P.richmondi.lam.list.name.2, 
+             parm="ELV", parm.type="lambda")
+VEG.beta.ric.pcount.2<-modavg(cand.set = P.richmondi.lam.list.2, 
+             modnames = P.richmondi.lam.list.name.2, 
+             parm="VEG", parm.type="lambda")
+TPI.beta.ric.pcount.2<-modavg(cand.set = P.richmondi.lam.list.2, 
+             modnames = P.richmondi.lam.list.name.2, 
+             parm="TPI", parm.type="lambda")
+RAD.beta.ric.pcount.2<-modavg(cand.set = P.richmondi.lam.list.2, 
+             modnames = P.richmondi.lam.list.name.2, 
+             parm="RAD", parm.type="lambda")
+
+MST.beta.ric.pcount.2
+CAN.beta.ric.pcount.2
+ASP.beta.ric.pcount.2
+ELV.beta.ric.pcount.2
+VEG.beta.ric.pcount.2
+TPI.beta.ric.pcount.2
+RAD.beta.ric.pcount.2
+```
+
+```{r, Simultaneous model averaging and back tranformation of P. richmondi N-mixture models!!}
+P.richmondi.lam.modavg=predict(richmondi.pcount.list.2, type="state")
+P.richmondi.det.lam.modavg=predict(richmondi.pcount.list.2, type="det")
+plogis(coef(richmondi.pcount.list.2))
+summary(P.richmondi.lam.modavg)
+P.richmondi.lam.modavg
+boxplot(P.richmondi.lam.modavg$Predicted)
+plot(CAN, P.richmondi.lam.modavg$Predicted, ylab="ModAvg P. richmondi Abundance")
+plot(MST, P.richmondi.lam.modavg$Predicted, ylab="ModAvg P. richmondi Abundance")
+plot(ELV, P.richmondi.lam.modavg$Predicted, ylab="ModAvg P. richmondi Abundance")
+plot(ASP, P.richmondi.lam.modavg$Predicted, ylab="ModAvg P. richmondi Abundance")
+plot(VEG, P.richmondi.lam.modavg$Predicted, ylab="ModAvg P. richmondi Abundance")
+plot(TPI, P.richmondi.lam.modavg$Predicted, ylab="ModAvg P. richmondi Abundance")
+plot(RAD, P.richmondi.lam.modavg$Predicted, ylab="ModAvg P. richmondi Abundance")
+```
+
+# Modeling P. richmondi occupancy: beginning with detection probability, results="hide"}
+```{r, Modeling P. richmondi OCCUPANCY: begin with detection probability, results="hide"}
+p_dot_psi_dot_richmondi_occu=                    occu(~1 ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_ROC_psi_dot_richmondi_occu=                    occu(~ROC ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_LUX_psi_dot_richmondi_occu=                    occu(~LUX ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_DAY_psi_dot_richmondi_occu=                    occu(~DAY ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_TOD_psi_dot_richmondi_occu=                    occu(~TOD ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_LLD_psi_dot_richmondi_occu=                    occu(~LLD ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_CWD_psi_dot_richmondi_occu=                    occu(~CWD ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_ROC_CWD_psi_dot_richmondi_occu=                occu(~ROC+CWD ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_TOD_DAY_psi_dot_richmondi_occu=                occu(~TOD+DAY ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_ROC_TOD_psi_dot_richmondi_occu=                occu(~ROC+TOD ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_CWD_TOD_psi_dot_richmondi_occu=                occu(~CWD+TOD ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_CWD_DAY_psi_dot_richmondi_occu=                occu(~CWD+DAY ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_CWD_LUX_psi_dot_richmondi_occu=                occu(~CWD+LUX ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_ROC_LUX_DAY_CWD_TOD_LLD_psi_dot_richmondi_occu=occu(~CWD+LUX+ROC+TOD+LLD+DAY ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+```
+
+# Create candidate model list for AIC selection of P.richmondi detection (occu)
+```{r, Create candidate model list for AIC selection of P.richmondi detection (occu)}
+richmondi.det.occu.list=fitList(
+  "p(.)psi(.)"                       =p_dot_psi_dot_richmondi_occu,
+  "p(ROC)psi(.)"                     =p_ROC_psi_dot_richmondi_occu,
+  "p(LUX)psi(.)"                     =p_LUX_psi_dot_richmondi_occu,
+  "p(DAY)psi(.)"                     =p_DAY_psi_dot_richmondi_occu,
+  "p(TOD)psi(.)"                     =p_TOD_psi_dot_richmondi_occu,
+  "p(LLD)psi(.)"                     =p_LLD_psi_dot_richmondi_occu,
+  "p(CWD)psi(.)"                     =p_CWD_psi_dot_richmondi_occu,
+  "p(ROC+CWD)psi(.)"                 =p_ROC_CWD_psi_dot_richmondi_occu,
+  "p(TOD+DAY)psi(.)"                 =p_TOD_DAY_psi_dot_richmondi_occu,
+  "p(ROC+TOD)psi(.)"                 =p_ROC_TOD_psi_dot_richmondi_occu,
+  "p(CWD+TOD)psi(.)"                 =p_CWD_TOD_psi_dot_richmondi_occu,
+  "p(CWD+DAY)psi(.)"                 =p_CWD_DAY_psi_dot_richmondi_occu,
+  "p(CWD+LUX)psi(.)"                 =p_CWD_LUX_psi_dot_richmondi_occu,
+  "p(ROC+LUX+DAY+CWD+TOD+LLD) psi(.)"=p_ROC_LUX_DAY_CWD_TOD_LLD_psi_dot_richmondi_occu)
+modSel(richmondi.det.occu.list)
+```
+
+# Beta estimates of detection parameters for P. richmondi (occu)
+```{r, beta estimates of detection parameters for P. richmondi (occu)}
+p.richmondi_occ_det_model_list=list(
+  p_dot_psi_dot_richmondi_occu,
+  p_ROC_psi_dot_richmondi_occu,
+  p_LUX_psi_dot_richmondi_occu,
+  p_DAY_psi_dot_richmondi_occu,
+  p_TOD_psi_dot_richmondi_occu,
+  p_LLD_psi_dot_richmondi_occu,
+  p_CWD_psi_dot_richmondi_occu,
+  p_ROC_CWD_psi_dot_richmondi_occu,
+  p_TOD_DAY_psi_dot_richmondi_occu,
+  p_ROC_TOD_psi_dot_richmondi_occu,
+  p_CWD_TOD_psi_dot_richmondi_occu,
+  p_CWD_DAY_psi_dot_richmondi_occu,
+  p_CWD_LUX_psi_dot_richmondi_occu,
+  p_ROC_LUX_DAY_CWD_TOD_LLD_psi_dot_richmondi_occu)
+p.richmondi_occ_det_model_names=c(
+  "p(.)psi(.)"                     ,
+  "p(ROC)psi(.)"                   ,
+  "p(LUX)psi(.)"                   ,
+  "p(DAY)psi(.)"                   ,
+  "p(TOD)psi(.)"                   ,
+  "p(LLD)psi(.)"                   ,
+  "p(CWD)psi(.)"                   ,
+  "p(ROC+CWD)psi(.)"               ,
+  "p(TOD+DAY)psi(.)"               ,
+  "p(ROC+TOD)psi(.)"               ,
+  "p(CWD+TOD)psi(.)"               ,
+  "p(CWD+DAY)psi(.)"               ,
+  "p(CWD+LUX)psi(.)"               ,
+  "p(ROC+LUX+DAY+CWD+TOD+LLD) psi(.)")
+  
+beta.cwd.ric.occu<-modavg(cand.set = p.richmondi_occ_det_model_list, 
+             modnames = p.richmondi_occ_det_model_names, 
+             parm="CWD", parm.type="detect")
+beta.roc.ric.occu<-modavg(cand.set = p.richmondi_occ_det_model_list, 
+             modnames = p.richmondi_occ_det_model_names, 
+             parm="ROC", parm.type="detect")
+beta.day.ric.occu<-modavg(cand.set = p.richmondi_occ_det_model_list, 
+             modnames = p.richmondi_occ_det_model_names, 
+             parm="DAY", parm.type="detect")
+beta.tod.ric.occu<-modavg(cand.set = p.richmondi_occ_det_model_list, 
+             modnames = p.richmondi_occ_det_model_names, 
+             parm="TOD", parm.type="detect")
+beta.lld.ric.occu<-modavg(cand.set = p.richmondi_occ_det_model_list, 
+             modnames = p.richmondi_occ_det_model_names, 
+             parm="LLD", parm.type="detect")
+beta.lux.ric.occu<-modavg(cand.set = p.richmondi_occ_det_model_list, 
+             modnames = p.richmondi_occ_det_model_names, 
+             parm="LUX", parm.type="detect")
+
+beta.cwd.ric.occu
+beta.roc.ric.occu
+beta.day.ric.occu
+beta.tod.ric.occu
+beta.lld.ric.occu
+beta.lux.ric.occu
+```
+# Beta estimates for P. ric. detetion (occu)
+```{r, Beta estimates for P. ric. detetion (occu)}
+
+# CWD
+# Model-averaged estimate: 0.17 
+# Unconditional SE: 0.21 
+# 95% Unconditional confidence interval: -0.24, 0.59
+
+# ROC
+# Model-averaged estimate: 0.42 
+# Unconditional SE: 0.34 
+# 95% Unconditional confidence interval: -0.23, 1.08
+
+# DAY
+# Model-averaged estimate: -0.05 
+# Unconditional SE: 0.21 
+# 95% Unconditional confidence interval: -0.47, 0.37
+
+# TOD*
+# Model-averaged estimate: -0.42 
+# Unconditional SE: 0.21 
+# 95% Unconditional confidence interval: -0.83, -0.01
+
+# LLD
+# Model-averaged estimate: -0.09 
+# Unconditional SE: 0.21 
+# 95% Unconditional confidence interval: -0.5, 0.33
+
+# LUX
+# Model-averaged estimate: -0.09 
+# Unconditional SE: 0.21 
+# 95% Unconditional confidence interval: -0.5, 0.31
+
+# TOD was the best detection parameter
+# Occupancy models of P. richmondi will only include TOD
+```
+
+# modeling P. richmondi occupancy
+```{r, Constructing occupancy models for P. richmondi with TOD, results="hide"}
+p_dot_psi_dot_richmondi_occu=occu(~1 ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+
+p_dot_psi_CAN_richmondi_occu=occu(~1 ~CAN, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_ELV_richmondi_occu=occu(~1 ~ELV, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_ASP_richmondi_occu=occu(~1 ~ASP, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_MST_richmondi_occu=occu(~1 ~MST, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_VEG_richmondi_occu=occu(~1 ~VEG, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_TPI_richmondi_occu=occu(~1 ~TPI, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_RAD_richmondi_occu=occu(~1 ~RAD, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+
+p_TOD_psi_dot_richmondi_occu=occu(~TOD ~1, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_TOD_psi_CAN_richmondi_occu=occu(~TOD ~CAN, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_TOD_psi_ASP_richmondi_occu=occu(~TOD ~ASP, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_TOD_psi_ELV_richmondi_occu=occu(~TOD ~ELV, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_TOD_psi_MST_richmondi_occu=occu(~TOD ~MST, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_TOD_psi_VEG_richmondi_occu=occu(~TOD ~VEG, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_TOD_psi_TPI_richmondi_occu=occu(~TOD ~TPI, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+p_TOD_psi_RAD_richmondi_occu=occu(~TOD ~RAD, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+
+p_TOD_psi_CAN_ASP_ELV_MST_VEG_TPI_RAD_richmondi_occu=occu(~TOD ~CAN+ASP+ELV+MST+VEG+TPI+RAD, data=P_richmondi_occu, control=list(trace=T, REPORT=100))
+```
+# Create candidate model list for AIC selection of P. richmondi occupancy
+```{r, Create candidate model list for AIC selection of P. richmondi occupancy}
+richmondi.occu.list=fitList(
+  "p(.)psi(.)"                  =p_dot_psi_dot_richmondi_occu,
+  "p(.)psi(CAN)"                =p_dot_psi_CAN_richmondi_occu,
+  "p(.)psi(ELV)"                =p_dot_psi_ELV_richmondi_occu,
+  "p(.)psi(ASP)"                =p_dot_psi_ASP_richmondi_occu,
+  "p(.)psi(MST)"                =p_dot_psi_MST_richmondi_occu,
+  "p(.)psi(VEG)"                =p_dot_psi_VEG_richmondi_occu,
+  "p(.)psi(TPI)"                =p_dot_psi_TPI_richmondi_occu,
+  "p(.)psi(RAD)"                =p_dot_psi_RAD_richmondi_occu,
+
+  "p(TOD)psi(.)"                =p_TOD_psi_dot_richmondi_occu,
+  "p(TOD)psi(CAN)"              =p_TOD_psi_CAN_richmondi_occu,
+  "p(TOD)psi(ELV)"              =p_TOD_psi_ELV_richmondi_occu,
+  "p(TOD)psi(ASP)"              =p_TOD_psi_ASP_richmondi_occu,
+  "p(TOD)psi(MST)"              =p_TOD_psi_MST_richmondi_occu,
+  "p(TOD)psi(VEG)"              =p_TOD_psi_VEG_richmondi_occu,
+  "p(TOD)psi(TPI)"              =p_TOD_psi_TPI_richmondi_occu,
+  "p(TOD)psi(RAD)"              =p_TOD_psi_RAD_richmondi_occu)
+
+modSel(richmondi.occu.list)
+```
+
+# Beta estimates of detection parameters for P. richmondi (occupancy)
+```{r, beta estimates of detection parameters in occu for P. richmondi}
+P.richmondi.occu.list=list(
+p_dot_psi_dot_richmondi_occu,
+p_dot_psi_CAN_richmondi_occu,
+p_dot_psi_ELV_richmondi_occu,
+p_dot_psi_ASP_richmondi_occu,
+p_dot_psi_MST_richmondi_occu,
+p_dot_psi_VEG_richmondi_occu,
+p_dot_psi_TPI_richmondi_occu,
+p_dot_psi_RAD_richmondi_occu,
+
+p_TOD_psi_dot_richmondi_occu,
+p_TOD_psi_CAN_richmondi_occu,
+p_TOD_psi_ELV_richmondi_occu,
+p_TOD_psi_ASP_richmondi_occu,
+p_TOD_psi_MST_richmondi_occu,
+p_TOD_psi_VEG_richmondi_occu,
+p_TOD_psi_TPI_richmondi_occu,
+p_TOD_psi_RAD_richmondi_occu
+)
+
+P.richmondi.occu.list.name=c(
+  "p(.)psi(.)"                  ,
+  "p(.)psi(CAN)"                ,
+  "p(.)psi(ELV)"                ,
+  "p(.)psi(ASP)"                ,
+  "p(.)psi(MST)"                ,
+  "p(.)psi(VEG)"                ,
+  "p(.)psi(TPI)"                ,
+  "p(.)psi(RAD)"                ,
+
+  "p(TOD)psi(.)"                ,
+  "p(TOD)psi(CAN)"              ,
+  "p(TOD)psi(ELV)"              ,
+  "p(TOD)psi(ASP)"              ,
+  "p(TOD)psi(MST)"              ,
+  "p(TOD)psi(VEG)"              ,
+  "p(TOD)psi(TPI)"              ,
+  "p(TOD)psi(RAD)"              
+)
+
+MST.beta.ric.occu<-modavg(cand.set = P.richmondi.occu.list, 
+             modnames = P.richmondi.occu.list.name, 
+             parm="MST", parm.type="psi")
+ELV.beta.ric.occu<-modavg(cand.set = P.richmondi.occu.list, 
+             modnames = P.richmondi.occu.list.name, 
+             parm="ELV", parm.type="psi")
+ASP.beta.ric.occu<-modavg(cand.set = P.richmondi.occu.list, 
+             modnames = P.richmondi.occu.list.name, 
+             parm="ASP", parm.type="psi")
+CAN.beta.ric.occu<-modavg(cand.set = P.richmondi.occu.list, 
+             modnames = P.richmondi.occu.list.name, 
+             parm="CAN", parm.type="psi")
+VEG.beta.ric.occu<-modavg(cand.set = P.richmondi.occu.list, 
+             modnames = P.richmondi.occu.list.name, 
+             parm="VEG", parm.type="psi")
+TPI.beta.ric.occu<-modavg(cand.set = P.richmondi.occu.list, 
+             modnames = P.richmondi.occu.list.name, 
+             parm="TPI", parm.type="psi")
+RAD.beta.ric.occu<-modavg(cand.set = P.richmondi.occu.list, 
+             modnames = P.richmondi.occu.list.name, 
+             parm="RAD", parm.type="psi")
+
+MST.beta.ric.occu
+ELV.beta.ric.occu
+ASP.beta.ric.occu
+CAN.beta.ric.occu
+VEG.beta.ric.occu
+TPI.beta.ric.occu
+RAD.beta.ric.occu
+```
+
+# beta estimates with shrinkage for P. richmondi lambda (occu)
+```{r, beta estimates with shrinkage for P. ricmondi lambda (occu)}
+# MST
+# Model-averaged estimate with shrinkage: 1.22 
+# Unconditional SE: 1.39 
+# 95% Unconditional confidence interval: -1.5, 3.94
+
+# CAN
+# Model-averaged estimate with shrinkage: -0.14 
+# Unconditional SE: 0.44 
+# 95% Unconditional confidence interval: -1, 0.73
+
+# ASP
+# Model-averaged estimate with shrinkage: 0.45 
+# Unconditional SE: 1.09 
+# 95% Unconditional confidence interval: -1.69, 2.59
+
+# ELV
+# Model-averaged estimate with shrinkage: 0 
+# Unconditional SE: 0.06 
+# 95% Unconditional confidence interval: -0.11, 0.12
+
+# VEG
+# Model-averaged estimate with shrinkage: 0.06 
+# Unconditional SE: 0.27 
+# 95% Unconditional confidence interval: -0.46, 0.58
+
+# TPI
+# Model-averaged estimate with shrinkage: -0.02 
+# Unconditional SE: 0.33 
+# 95% Unconditional confidence interval: -0.68, 0.63
+
+# RAD
+# Model-averaged estimate with shrinkage: -0.06 
+# Unconditional SE: 0.34 
+# 95% Unconditional confidence interval: -0.72, 0.61
+
+# All models feature Beta values that change sign in their 95% CI
+
+# No parameters merit construction of 2-cov occupancy models
+```
+
+# Simultaneous model averaging and back tranformation of P. richmondi Occupancy models!!
+```{r, Simultaneous model averaging and back tranformation of P. richmondi Occupancy models!!}
+
+P.richmondi.psi.modavg=predict(richmondi.occu.list, type="state")
+P.richmondi.det.occ.modavg=predict(richmondi.occu.list, type="det")
+summary(P.richmondi.psi.modavg)
+boxplot(P.richmondi.psi.modavg$Predicted)
+plot(CAN, P.richmondi.psi.modavg$Predicted, ylab="ModAvg P. richmondi Occupancy")
+plot(MST, P.richmondi.psi.modavg$Predicted, ylab="ModAvg P. richmondi Occupancy")
+plot(ELV, P.richmondi.psi.modavg$Predicted, ylab="ModAvg P. richmondi Occupancy")
+plot(ASP, P.richmondi.psi.modavg$Predicted, ylab="ModAvg P. richmondi Occupancy")
+plot(VEG, P.richmondi.psi.modavg$Predicted, ylab="ModAvg P. richmondi Occupancy")
+plot(TPI, P.richmondi.psi.modavg$Predicted, ylab="ModAvg P. richmondi Occupancy")
+plot(RAD, P.richmondi.psi.modavg$Predicted, ylab="ModAvg P. richmondi Occupancy")
+```
+## ------------ END: P. richmondi --------------- ##
+
+## ------------ Begin: P. glutinosus ------------ ##
+
+# Begin N-mixture model construction with P. glutinosus detection
+```{r, Begin N-mixture model construction with P. glutinosus detection, results="hide"}
+p_dot_lam_dot_P_glutinosus_pcount=pcount(~1 ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_ROC_lam_dot_P_glutinosus_pcount=pcount(~ROC ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_LUX_lam_dot_P_glutinosus_pcount=pcount(~LUX ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_DAY_lam_dot_P_glutinosus_pcount=pcount(~DAY ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_TOD_lam_dot_P_glutinosus_pcount=pcount(~TOD ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_LLD_lam_dot_P_glutinosus_pcount=pcount(~LLD ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_CWD_lam_dot_P_glutinosus_pcount=pcount(~CWD ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_ROC_CWD_lam_dot_P_glutinosus_pcount=pcount(~ROC+CWD ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_TOD_DAY_lam_dot_P_glutinosus_pcount=pcount(~TOD+DAY ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_ROC_TOD_lam_dot_P_glutinosus_pcount=pcount(~ROC+TOD ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_CWD_TOD_lam_dot_P_glutinosus_pcount=pcount(~CWD+TOD ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_CWD_DAY_lam_dot_P_glutinosus_pcount=pcount(~CWD+DAY ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_CWD_LUX_lam_dot_P_glutinosus_pcount=pcount(~CWD+LUX ~1, data=P_glutinosus_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_ROC_LUX_DAY_CWD_TOD_LLD_lam_dot_P_glutinosus_pcount=pcount(~CWD+LUX+ROC+TOD+LLD+DAY ~1, K_kent, data=P_glutinosus_pcount, control=list(trace=T, REPORT=100))
+```
+
+# ranking candidate detection models for P. glutinosus N-mixture models
+```{r, ranking candidate detection models for P. glutinosus N-mixture models}
+P.glutinosus.det.pcount.list=fitList(
+  "p(.)lam(.)"                       =p_dot_lam_dot_P_glutinosus_pcount,
+  "p(ROC)lam(.)"                     =p_ROC_lam_dot_P_glutinosus_pcount,
+  "p(LUX)lam(.)"                     =p_LUX_lam_dot_P_glutinosus_pcount,
+  "p(DAY)lam(.)"                     =p_DAY_lam_dot_P_glutinosus_pcount,
+  "p(TOD)lam(.)"                     =p_TOD_lam_dot_P_glutinosus_pcount,
+  "p(LLD)lam(.)"                     =p_LLD_lam_dot_P_glutinosus_pcount,
+  "p(CWD)lam(.)"                     =p_CWD_lam_dot_P_glutinosus_pcount,
+  "p(ROC+CWD)lam(.)"                 =p_ROC_CWD_lam_dot_P_glutinosus_pcount,
+  "p(TOD+DAY)lam(.)"                 =p_TOD_DAY_lam_dot_P_glutinosus_pcount,
+  "p(ROC+TOD)lam(.)"                 =p_ROC_TOD_lam_dot_P_glutinosus_pcount,
+  "p(CWD+TOD)lam(.)"                 =p_CWD_TOD_lam_dot_P_glutinosus_pcount,
+  "p(CWD+DAY)lam(.)"                 =p_CWD_DAY_lam_dot_P_glutinosus_pcount,
+  "p(CWD+LUX)lam(.)"                 =p_CWD_LUX_lam_dot_P_glutinosus_pcount,
+  "p(ROC+LUX+DAY+CWD+TOD+LLD) lam(.)"=p_ROC_LUX_DAY_CWD_TOD_LLD_lam_dot_P_glutinosus_pcount)
+modSel(P.glutinosus.det.pcount.list)
+```
+
+# beta estimation for P. glutinosus detection (Pcount)
+```{r, beta estimation for P. glutinosus detection (Pcount)}
+p.glutinosus_lam_det_model_list=list(
+  p_dot_lam_dot_P_glutinosus_pcount,
+  p_ROC_lam_dot_P_glutinosus_pcount,
+  p_LUX_lam_dot_P_glutinosus_pcount,
+  p_DAY_lam_dot_P_glutinosus_pcount,
+  p_TOD_lam_dot_P_glutinosus_pcount,
+  p_LLD_lam_dot_P_glutinosus_pcount,
+  p_CWD_lam_dot_P_glutinosus_pcount,
+  p_ROC_CWD_lam_dot_P_glutinosus_pcount,
+  p_TOD_DAY_lam_dot_P_glutinosus_pcount,
+  p_ROC_TOD_lam_dot_P_glutinosus_pcount,
+  p_CWD_TOD_lam_dot_P_glutinosus_pcount,
+  p_CWD_DAY_lam_dot_P_glutinosus_pcount,
+  p_CWD_LUX_lam_dot_P_glutinosus_pcount,
+  p_ROC_LUX_DAY_CWD_TOD_LLD_lam_dot_P_glutinosus_pcount)
+p.glutinosus_lam_det_model_names=c(
+  "p(.)lam(.)",
+  "p(ROC)lam(.)",
+  "p(LUX)lam(.)",
+  "p(DAY)lam(.)",
+  "p(TOD)lam(.)",
+  "p(LLD)lam(.)",
+  "p(CWD)lam(.)",
+  "p(ROC+CWD)lam(.)",
+  "p(TOD+DAY)lam(.)",
+  "p(ROC+TOD)lam(.)",
+  "p(CWD+TOD)lam(.)",
+  "p(CWD+DAY)lam(.)",
+  "p(CWD+LUX)lam(.)",
+  "p(ROC+LUX+DAY+CWD+TOD+LLD)lam(.)")
+
+modavg(cand.set = p.glutinosus_lam_det_model_list, 
+             modnames = p.glutinosus_lam_det_model_names, 
+             parm="CWD", parm.type="detect")
+modavg(cand.set = p.glutinosus_lam_det_model_list, 
+             modnames = p.glutinosus_lam_det_model_names, 
+             parm="ROC", parm.type="detect")
+modavg(cand.set = p.glutinosus_lam_det_model_list, 
+             modnames = p.glutinosus_lam_det_model_names, 
+             parm="DAY", parm.type="detect")
+modavg(cand.set = p.glutinosus_lam_det_model_list, 
+             modnames = p.glutinosus_lam_det_model_names, 
+             parm="TOD", parm.type="detect")
+modavg(cand.set = p.glutinosus_lam_det_model_list, 
+             modnames = p.glutinosus_lam_det_model_names, 
+             parm="LLD", parm.type="detect")
+modavg(cand.set = p.glutinosus_lam_det_model_list, 
+             modnames = p.glutinosus_lam_det_model_names, 
+             parm="LUX", parm.type="detect")
+```
+
+# P. glutinosus detection beta estimates (Pcount)
+```{r, P. glutinosus detection betas (Pcount)}
+# LUX
+# Model-averaged estimate: -0.09 
+# Unconditional SE: 0.21 
+# 95% Unconditional confidence interval: -0.5, 0.31
+
+# LLD 
+# Model-averaged estimate: -0.09 
+# Unconditional SE: 0.21 
+# 95% Unconditional confidence interval: -0.5, 0.33
+
+# TOD*
+# Model-averaged estimate: -0.42 
+# Unconditional SE: 0.21 
+# 95% Unconditional confidence interval: -0.83, -0.01
+
+# DAY
+# Model-averaged estimate: -0.05 
+# Unconditional SE: 0.21 
+# 95% Unconditional confidence interval: -0.47, 0.37
+
+# ROC
+# Model-averaged estimate: 0.42 
+# Unconditional SE: 0.34 
+# 95% Unconditional confidence interval: -0.23, 1.08
+
+# CWD
+# Model-averaged estimate: 0.17 
+# Unconditional SE: 0.21 
+# 95% Unconditional confidence interval: -0.24, 0.59
+
+# TOD was the only detection covariate with a 95% CI that doesn't span "0", therefore, abundance models will only feature time of day
+```
+
+# test 3 distributions on P. glutinosis counts
+```{r, test three abundance models: Poisson, NB, and ZIP}
+p_TOD_lam_CAN_P_glutinosus_pcount_Poisson=pcount(~TOD ~CAN, data=P_glutinosus_pcount, K_glut, control=list(trace=T, REPORT=1))
+p_TOD_lam_CAN_P_glutinosus_pcount_NB=pcount(~TOD ~CAN, data=P_glutinosus_pcount, mixture="NB", K_glut, control=list(trace=T, REPORT=1))
+p_TOD_lam_CAN_P_glutinosus_pcount_ZIP=pcount(~TOD ~CAN, data=P_glutinosus_pcount, mixture="ZIP", K_glut, control=list(trace=T, REPORT=1))
+cbind(AIC.P<-p_TOD_lam_CAN_P_glutinosus_pcount_Poisson@AIC, AIC.NB<-p_TOD_lam_CAN_P_glutinosus_pcount_NB@AIC, AIC.ZIP<-p_TOD_lam_CAN_P_glutinosus_pcount_ZIP@AIC)
+# The Poisson cake-taking continues
+```
+
+# Building N-mixture models for P. glutinosus
+```{r, Building N-mixture models for P. glutinosus, results="hide"}
+p_dot_lam_dot_P_glutinosus_pcount=pcount(~1 ~1, data=P_glutinosus_pcount, K=22 , mixture="NB", control=list(trace=T, REPORT=100))
+p_dot_lam_CAN_P_glutinosus_pcount=pcount(~1 ~CAN, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_dot_lam_ELV_P_glutinosus_pcount=pcount(~1 ~ELV, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_dot_lam_ASP_P_glutinosus_pcount=pcount(~1 ~ASP, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_dot_lam_MST_P_glutinosus_pcount=pcount(~1 ~MST, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_dot_lam_VEG_P_glutinosus_pcount=pcount(~1 ~VEG, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_dot_lam_TPI_P_glutinosus_pcount=pcount(~1 ~TPI, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_dot_lam_RAD_P_glutinosus_pcount=pcount(~1 ~RAD, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_TOD_lam_dot_P_glutinosus_pcount=pcount(~TOD ~1, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_TOD_lam_CAN_P_glutinosus_pcount=pcount(~TOD ~CAN, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_TOD_lam_ASP_P_glutinosus_pcount=pcount(~TOD ~ASP, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_TOD_lam_ELV_P_glutinosus_pcount=pcount(~TOD ~ELV, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_TOD_lam_MST_P_glutinosus_pcount=pcount(~TOD ~MST, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_TOD_lam_VEG_P_glutinosus_pcount=pcount(~TOD ~VEG, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_TOD_lam_TPI_P_glutinosus_pcount=pcount(~TOD ~TPI, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_TOD_lam_RAD_P_glutinosus_pcount=pcount(~TOD ~RAD, data=P_glutinosus_pcount, K=22, mixture="NB", control=list(trace=T, REPORT=100))
+p_TOD_lam_CAN_MST_ASP_ELV_P_glutinosus_pcount=pcount(~CWD ~CAN+MST+ASP+ELV+VEG+TPI+RAD,K=22, mixture="NB", data=P_glutinosus_pcount, control=list(trace=T, REPORT=100))
+```
+
+# Model selection of P. glutinosus N-mixture models
+```{r, Model selection of P. glutinosus N-mixture models}
+P.glutinosus.pcount.list <- fitList(
+"p(.)lam(.)"              =p_dot_lam_dot_P_glutinosus_pcount,
+
+"p(.)lam(CAN)"            =p_dot_lam_CAN_P_glutinosus_pcount,
+"p(.)lam(ELV)"            =p_dot_lam_ELV_P_glutinosus_pcount,
+"p(.)lam(ASP)"            =p_dot_lam_ASP_P_glutinosus_pcount,
+"p(.)lam(MST)"            =p_dot_lam_MST_P_glutinosus_pcount,
+"p(.)lam(VEG)"            =p_dot_lam_VEG_P_glutinosus_pcount,
+"p(.)lam(TPI)"            =p_dot_lam_TPI_P_glutinosus_pcount,
+"p(.)lam(RAD)"            =p_dot_lam_RAD_P_glutinosus_pcount,
+
+"p(CWD)lam(.)"            =p_TOD_lam_dot_P_glutinosus_pcount,
+"p(CWD)lam(CAN)"          =p_TOD_lam_CAN_P_glutinosus_pcount,
+"p(CWD)lam(ASP)"          =p_TOD_lam_ASP_P_glutinosus_pcount,
+"p(CWD)lam(ELV)"          =p_TOD_lam_ELV_P_glutinosus_pcount,
+"p(CWD)lam(MST)"          =p_TOD_lam_MST_P_glutinosus_pcount,
+"p(CWD)lam(VEG)"          =p_TOD_lam_VEG_P_glutinosus_pcount,
+"p(CWD)lam(TPI)"          =p_TOD_lam_TPI_P_glutinosus_pcount,
+"p(CWD)lam(RAD)"          =p_TOD_lam_RAD_P_glutinosus_pcount)
+modSel(P.glutinosus.pcount.list)
+```
+
+# Estimating betas for P. glutinosus abundance
+```{r, Estimating betas for P. glutinosus abundance}
+p.glutinosus_lam_model_list=list(
+p_dot_lam_dot_P_glutinosus_pcount,
+
+p_dot_lam_CAN_P_glutinosus_pcount,
+p_dot_lam_ELV_P_glutinosus_pcount,
+p_dot_lam_ASP_P_glutinosus_pcount,
+p_dot_lam_MST_P_glutinosus_pcount,
+p_dot_lam_VEG_P_glutinosus_pcount,
+p_dot_lam_TPI_P_glutinosus_pcount,
+p_dot_lam_RAD_P_glutinosus_pcount,
+
+p_TOD_lam_dot_P_glutinosus_pcount,
+p_TOD_lam_CAN_P_glutinosus_pcount,
+p_TOD_lam_ASP_P_glutinosus_pcount,
+p_TOD_lam_ELV_P_glutinosus_pcount,
+p_TOD_lam_MST_P_glutinosus_pcount,
+p_TOD_lam_VEG_P_glutinosus_pcount,
+p_TOD_lam_TPI_P_glutinosus_pcount,
+p_TOD_lam_RAD_P_glutinosus_pcount)
+
+p.glutinosus_lam_model_name=c(
+"p(.)lam(.)"              ,
+
+"p(.)lam(CAN)"            ,
+"p(.)lam(ELV)"            ,
+"p(.)lam(ASP)"            ,
+"p(.)lam(MST)"            ,
+"p(.)lam(VEG)"            ,
+"p(.)lam(TPI)"            ,
+"p(.)lam(RAD)"            ,
+
+"p(TOD)lam(.)"            ,
+"p(TOD)lam(CAN)"          ,
+"p(TOD)lam(ASP)"          ,
+"p(TOD)lam(ELV)"          ,
+"p(TOD)lam(MST)"          ,
+"p(TOD)lam(VEG)"          ,
+"p(TOD)lam(TPI)"          ,
+"p(TOD)lam(RAD)")
+
+MST.beta.glu.pcount<-modavg(cand.set = p.glutinosus_lam_model_list, 
+             modnames = p.glutinosus_lam_model_name, 
+             parm="MST", parm.type="lambda")
+CAN.beta.glu.pcount<-modavg(cand.set = p.glutinosus_lam_model_list, 
+             modnames = p.glutinosus_lam_model_name, 
+             parm="CAN", parm.type="lambda")
+ASP.beta.glu.pcount<-modavg(cand.set = p.glutinosus_lam_model_list, 
+             modnames = p.glutinosus_lam_model_name, 
+             parm="ASP", parm.type="lambda")
+ELV.beta.glu.pcount<-modavg(cand.set = p.glutinosus_lam_model_list, 
+             modnames = p.glutinosus_lam_model_name, 
+             parm="ELV", parm.type="lambda")
+VEG.beta.glu.pcount<-modavg(cand.set = p.glutinosus_lam_model_list, 
+             modnames = p.glutinosus_lam_model_name, 
+             parm="VEG", parm.type="lambda")
+TPI.beta.glu.pcount<-modavg(cand.set = p.glutinosus_lam_model_list, 
+             modnames = p.glutinosus_lam_model_name, 
+             parm="TPI", parm.type="lambda")
+RAD.beta.glu.pcount<-modavg(cand.set = p.glutinosus_lam_model_list, 
+             modnames = p.glutinosus_lam_model_name, 
+             parm="RAD", parm.type="lambda")
+
+MST.beta.glu.pcount
+CAN.beta.glu.pcount
+ASP.beta.glu.pcount
+ELV.beta.glu.pcount
+VEG.beta.glu.pcount
+TPI.beta.glu.pcount
+RAD.beta.glu.pcount
+```
+
+#Simultaneous model averaging and back tranformation of P. plutinosus N-mixture models
+```{r, Simultaneous model averaging and back tranformation of P. plutinosus N-mixture models!!}
+P.glutinosus.pcount.modavg=predict(P.glutinosus.pcount.list, type="state")
+P.glutinosus.det.pcount.modavg=predict(P.glutinosus.pcount.list, type="det")
+summary(P.glutinosus.pcount.modavg)
+boxplot(P.glutinosus.pcount.modavg$Predicted)
+plot(CAN, P.glutinosus.pcount.modavg$Predicted, ylab="ModAvg P. glutinosus Abundance")
+plot(MST, P.glutinosus.pcount.modavg$Predicted, ylab="ModAvg P. glutinosus Abundance")
+plot(ELV, P.glutinosus.pcount.modavg$Predicted, ylab="ModAvg P. glutinosus Abundance")
+plot(ASP, P.glutinosus.pcount.modavg$Predicted, ylab="ModAvg P. glutinosus Abundance")
+plot(VEG, P.glutinosus.pcount.modavg$Predicted, ylab="ModAvg P. glutinosus Abundance")
+plot(TPI, P.glutinosus.pcount.modavg$Predicted, ylab="ModAvg P. glutinosus Abundance")
+plot(RAD, P.glutinosus.pcount.modavg$Predicted, ylab="ModAvg P. glutinosus Abundance")
+```
+
+```{r, Modeling P. glutinosus OCCUPANCY: begin with detection probability, results="hide"}
+p_dot_psi_dot_glutinosus_occu=occu(~1 ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_ROC_psi_dot_glutinosus_occu=occu(~ROC ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_LUX_psi_dot_glutinosus_occu=occu(~LUX ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_DAY_psi_dot_glutinosus_occu=occu(~DAY ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_TOD_psi_dot_glutinosus_occu=occu(~TOD ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_LLD_psi_dot_glutinosus_occu=occu(~LLD ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_CWD_psi_dot_glutinosus_occu=occu(~CWD ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_ROC_CWD_psi_dot_glutinosus_occu=occu(~ROC+CWD ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_TOD_DAY_psi_dot_glutinosus_occu=occu(~TOD+DAY ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_ROC_TOD_psi_dot_glutinosus_occu=occu(~ROC+TOD ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_CWD_TOD_psi_dot_glutinosus_occu=occu(~CWD+TOD ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_CWD_DAY_psi_dot_glutinosus_occu=occu(~CWD+DAY ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_CWD_LUX_psi_dot_glutinosus_occu=occu(~CWD+LUX ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_ROC_LUX_DAY_CWD_TOD_LLD_psi_dot_glutinosus_occu=occu(~CWD+LUX+ROC+TOD+LLD+DAY ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+```
+
+```{r, Model selection of occupancy models with only detection parameters for P. glutinosus}
+glutinosus.det.occu.list=fitList(
+  "p(.)psi(.)"                       =p_dot_psi_dot_glutinosus_occu,
+  "p(ROC)psi(.)"                     =p_ROC_psi_dot_glutinosus_occu,
+  "p(LUX)psi(.)"                     =p_LUX_psi_dot_glutinosus_occu,
+  "p(DAY)psi(.)"                     =p_DAY_psi_dot_glutinosus_occu,
+  "p(TOD)psi(.)"                     =p_TOD_psi_dot_glutinosus_occu,
+  "p(LLD)psi(.)"                     =p_LLD_psi_dot_glutinosus_occu,
+  "p(CWD)psi(.)"                     =p_CWD_psi_dot_glutinosus_occu,
+  "p(ROC+CWD)psi(.)"                 =p_ROC_CWD_psi_dot_glutinosus_occu,
+  "p(TOD+DAY)psi(.)"                 =p_TOD_DAY_psi_dot_glutinosus_occu,
+  "p(ROC+TOD)psi(.)"                 =p_ROC_TOD_psi_dot_glutinosus_occu,
+  "p(CWD+TOD)psi(.)"                 =p_CWD_TOD_psi_dot_glutinosus_occu,
+  "p(CWD+DAY)psi(.)"                 =p_CWD_DAY_psi_dot_glutinosus_occu,
+  "p(CWD+LUX)psi(.)"                 =p_CWD_LUX_psi_dot_glutinosus_occu,
+  "p(ROC+LUX+DAY+CWD+TOD+LLD) psi(.)"=p_ROC_LUX_DAY_CWD_TOD_LLD_psi_dot_glutinosus_occu)
+modSel(glutinosus.det.occu.list)
+```
+
+# Estimation of P. glutinosus detection (occu) betas
+```{r, Estimation of P. glutinosus detection (occu) betas}
+p.glutinosus_det_occu_model_list=list(
+  p_dot_psi_dot_glutinosus_occu,
+  p_ROC_psi_dot_glutinosus_occu,
+  p_LUX_psi_dot_glutinosus_occu,
+  p_DAY_psi_dot_glutinosus_occu,
+  p_TOD_psi_dot_glutinosus_occu,
+  p_LLD_psi_dot_glutinosus_occu,
+  p_CWD_psi_dot_glutinosus_occu,
+  p_ROC_CWD_psi_dot_glutinosus_occu,
+  p_TOD_DAY_psi_dot_glutinosus_occu,
+  p_ROC_TOD_psi_dot_glutinosus_occu,
+  p_CWD_TOD_psi_dot_glutinosus_occu,
+  p_CWD_DAY_psi_dot_glutinosus_occu,
+  p_CWD_LUX_psi_dot_glutinosus_occu,
+  p_ROC_LUX_DAY_CWD_TOD_LLD_psi_dot_glutinosus_occu)
+p.glutinosus_det_occu_model_name=c(
+  "p(.)psi(.)",
+  "p(ROC)psi(.)",
+  "p(LUX)psi(.)",
+  "p(DAY)psi(.)",
+  "p(TOD)psi(.)",
+  "p(LLD)psi(.)",
+  "p(CWD)psi(.)",
+  "p(ROC+CWD)psi(.)",
+  "p(TOD+DAY)psi(.)",
+  "p(ROC+TOD)psi(.)",
+  "p(CWD+TOD)psi(.)",
+  "p(CWD+DAY)psi(.)",
+  "p(CWD+LUX)psi(.)",
+  "p(ROC+LUX+DAY+CWD+TOD+LLD) psi(.)")
+
+modavg(cand.set = p.glutinosus_det_occu_model_list, 
+             modnames = p.glutinosus_det_occu_model_name, 
+             parm="CWD", parm.type="detect")
+modavg(cand.set = p.glutinosus_det_occu_model_list, 
+             modnames = p.glutinosus_det_occu_model_name, 
+             parm="ROC", parm.type="detect")
+modavg(cand.set = p.glutinosus_det_occu_model_list, 
+             modnames = p.glutinosus_det_occu_model_name, 
+             parm="TOD", parm.type="detect")
+modavg(cand.set = p.glutinosus_det_occu_model_list, 
+             modnames = p.glutinosus_det_occu_model_name, 
+             parm="DAY", parm.type="detect")
+modavg(cand.set = p.glutinosus_det_occu_model_list, 
+             modnames = p.glutinosus_det_occu_model_name, 
+             parm="LUX", parm.type="detect")
+modavg(cand.set = p.glutinosus_det_occu_model_list, 
+             modnames = p.glutinosus_det_occu_model_name, 
+             parm="LLD", parm.type="detect")
+```
+
+# Estimating betas for P. glutinosus detection (occu)
+```{r, Estimating betas for P. glutinosus detection (occu)}
+# LLD:
+# Model-averaged estimate with shrinkage: -0.01 
+# Unconditional SE: 0.14 
+# 95% Unconditional confidence interval: -0.3, 0.27
+
+# LUX:
+# Model-averaged estimate with shrinkage: 0.01 
+# Unconditional SE: 0.1 
+# 95% Unconditional confidence interval: -0.2, 0.21
+
+# DAY:
+# Model-averaged estimate with shrinkage: -0.11 
+# Unconditional SE: 0.36 
+# 95% Unconditional confidence interval: -0.82, 0.6
+
+# TOD:
+# Model-averaged estimate with shrinkage: 1.29 
+# Unconditional SE: 0.67 
+# 95% Unconditional confidence interval: -0.03, 2.61
+
+# ROC:
+# Model-averaged estimate with shrinkage: -0.01 
+# Unconditional SE: 0.12 
+# 95% Unconditional confidence interval: -0.26, 0.23
+
+# CWD*:
+# Model-averaged estimate with shrinkage: 1.39 
+# Unconditional SE: 0.5 
+# 95% Unconditional confidence interval: 0.4, 2.37
+
+# CWD was the only detection covariate with with a beta 95% CI that didn't span "0", therefore P. glutinosus occupancy models will only feature CWD
+```
+
+# Build occupancy models for P. glutinosis (lots of models didn't converge)
+```{r, Build occupancy models for P. glutinosus, results="hide"}
+#p_dot_psi_dot_P_glutinosus_occu=occu(~1 ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_CAN_P_glutinosus_occu=occu(~1 ~CAN, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+#p_dot_psi_ELV_P_glutinosus_occu=occu(~1 ~ELV, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+#p_dot_psi_ASP_P_glutinosus_occu=occu(~1 ~ASP, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_MST_P_glutinosus_occu=occu(~1 ~MST, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_VEG_P_glutinosus_occu=occu(~1 ~VEG, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+#p_dot_psi_TPI_P_glutinosus_occu=occu(~1 ~TPI, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+#p_dot_psi_RAD_P_glutinosus_occu=occu(~1 ~RAD, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+
+p_CWD_psi_dot_P_glutinosus_occu=occu(~CWD ~1, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+#p_CWD_psi_CAN_P_glutinosus_occu=occu(~CWD ~CAN, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+#p_CWD_psi_ASP_P_glutinosus_occu=occu(~CWD ~ASP, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+#p_CWD_psi_ELV_P_glutinosus_occu=occu(~CWD ~ELV, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_CWD_psi_MST_P_glutinosus_occu=occu(~CWD ~MST, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+p_CWD_psi_VEG_P_glutinosus_occu=occu(~CWD ~VEG, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+#p_CWD_psi_TPI_P_glutinosus_occu=occu(~CWD ~TPI, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+#p_CWD_psi_RAD_P_glutinosus_occu=occu(~CWD ~RAD, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+
+p_CWD_psi_MST_VEG_glutinosus_occu=occu(~CWD ~MST+VEG, data=P_glutinosus_occu, control=list(trace=T, REPORT=100))
+```
+
+# Create candidate model list of P. glutinosus occupancy models for AIC selection
+```{r, Create candidate model list of P. glutinosus occupancy models for AIC selection}
+glutinosus.occu.list=fitList(
+ #"p(.)psi(CAN)"    =p_dot_psi_CAN_P_glutinosus_occu,
+ #"p(.)psi(MST)"    =p_dot_psi_MST_P_glutinosus_occu,
+ #"p(.)psi(VEG)"    =p_dot_psi_VEG_P_glutinosus_occu,
+ "p(CWD)psi(.)"    =p_CWD_psi_dot_P_glutinosus_occu,
+ #"p(CWD)psi(MST)"  =p_CWD_psi_MST_P_glutinosus_occu,
+ #"p(CWD)psi(VEG)"  =p_CWD_psi_VEG_P_glutinosus_occu,
+ "p(CWD)psi(MST+VEG)"    =p_CWD_psi_MST_VEG_glutinosus_occu
+)
+  modSel(glutinosus.occu.list)
+```
+
+# estimating betas for P. glutinosus occupancy models
+```{r, estimating betas for P. glutinosus occupancy models}
+p.glutinosus_occu_model_list2=list(
+#p_dot_psi_CAN_P_glutinosus_occu,
+#p_dot_psi_MST_P_glutinosus_occu,
+#p_dot_psi_VEG_P_glutinosus_occu,
+p_CWD_psi_dot_P_glutinosus_occu,
+#p_CWD_psi_MST_P_glutinosus_occu,
+#p_CWD_psi_VEG_P_glutinosus_occu,
+p_CWD_psi_MST_VEG_glutinosus_occu)
+
+p.glutinosus_occu_model_names2=c(
+ #"p(.)psi(CAN)"    ,
+ #"p(.)psi(MST)"    ,
+ #"p(.)psi(VEG)"    ,
+ "p(CWD)psi(.)"    ,
+ #p(CWD)psi(MST)"  ,
+ #p(CWD)psi(VEG)"  , 
+ "p(CWD)psi(MST+VEG)"    
+)
+
+MST.beta.glu.occu<-modavg(cand.set = p.glutinosus_occu_model_list2, 
+             modnames = p.glutinosus_occu_model_names2, 
+             parm="MST", parm.type="psi")
+VEG.beta.glu.occu<-modavg(cand.set = p.glutinosus_occu_model_list2, 
+             modnames = p.glutinosus_occu_model_names2, 
+             parm="VEG", parm.type="psi")
+
+MST.beta.glu.occu
+VEG.beta.glu.occu
+```
+# Beta estimates for P. glutinosus occupancy models
+```{r, Beta estimates for P. glutinosus occupancy models}
+# MST:
+# Model-averaged estimate with shrinkage: -0.1 
+# Unconditional SE: 2.02 
+# 95% Unconditional confidence interval: -4.07, 3.86
+
+# CAN:
+# Model-averaged estimate with shrinkage: -0.15 
+# Unconditional SE: 3.03 
+# 95% Unconditional confidence interval: -6.1, 5.79
+
+# VEG:
+# Model-averaged estimate with shrinkage: 0.06 
+# Unconditional SE: 4.38 
+# 95% Unconditional confidence interval: -8.52, 8.64
+
+# All betas span "0"
+```
+
+# Model averaging and back tranformation P. glutinosus Occupancy models!!
+```{r, Model averaging and back tranformation P. glutinosus Occupancy models!!}
+P.glutinosus.psi.modavg=predict(glutinosus.occu.list, type="state")
+P.glutinosus.det.psi.modavg=predict(glutinosus.occu.list, type="det")
+summary(P.glutinosus.psi.modavg)
+boxplot(P.glutinosus.psi.modavg$Predicted)
+plot(CAN, P.glutinosus.psi.modavg$Predicted, ylab="ModAvg P. glutinosus Occupancy")
+plot(MST, P.glutinosus.psi.modavg$Predicted, ylab="ModAvg P. glutinosus Occupancy")
+plot(ELV, P.glutinosus.psi.modavg$Predicted, ylab="ModAvg P. glutinosus Occupancy")
+plot(ASP, P.glutinosus.psi.modavg$Predicted, ylab="ModAvg P. glutinosus Occupancy")
+```
+
+## ------------ END: P. glutinosus ------------
+## ------------ Begin: P. kentucki ------------
+```{r, Begin N-mixture model construction with P. kentucki detection, results="hide"}
+p_dot_lam_dot_P_kentucki_pcount=pcount(~1 ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_ROC_lam_dot_P_kentucki_pcount=pcount(~ROC ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_LUX_lam_dot_P_kentucki_pcount=pcount(~LUX ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_DAY_lam_dot_P_kentucki_pcount=pcount(~DAY ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_TOD_lam_dot_P_kentucki_pcount=pcount(~TOD ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_LLD_lam_dot_P_kentucki_pcount=pcount(~LLD ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_CWD_lam_dot_P_kentucki_pcount=pcount(~CWD ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_ROC_CWD_lam_dot_P_kentucki_pcount=pcount(~ROC+CWD ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_TOD_DAY_lam_dot_P_kentucki_pcount=pcount(~TOD+DAY ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_ROC_TOD_lam_dot_P_kentucki_pcount=pcount(~ROC+TOD ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_CWD_TOD_lam_dot_P_kentucki_pcount=pcount(~CWD+TOD ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_CWD_DAY_lam_dot_P_kentucki_pcount=pcount(~CWD+DAY ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_CWD_LUX_lam_dot_P_kentucki_pcount=pcount(~CWD+LUX ~1, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+p_ROC_LUX_DAY_CWD_TOD_LLD_lam_dot_P_kentucki_pcount=pcount(~CWD+LUX+ROC+TOD+LLD+DAY ~1, K=K_kent, data=P_kentucki_pcount, control=list(trace=T, REPORT=100))
+```
+# Create candidate models for P. kentucki detection (N-mixture)
+```{r, Create candidate model list for AIC selection of P. kentucki detection (N-mixture)}
+P.kentucki.det.list=fitList(
+  "p(.)lam(.)"                       =p_dot_lam_dot_P_kentucki_pcount,
+  "p(ROC)lam(.)"                     =p_ROC_lam_dot_P_kentucki_pcount,
+  "p(LUX)lam(.)"                     =p_LUX_lam_dot_P_kentucki_pcount,
+  "p(DAY)lam(.)"                     =p_DAY_lam_dot_P_kentucki_pcount,
+  "p(TOD)lam(.)"                     =p_TOD_lam_dot_P_kentucki_pcount,
+  "p(LLD)lam(.)"                     =p_LLD_lam_dot_P_kentucki_pcount,
+  "p(CWD)lam(.)"                     =p_CWD_lam_dot_P_kentucki_pcount,
+  "p(ROC+CWD)lam(.)"                 =p_ROC_CWD_lam_dot_P_kentucki_pcount,
+  "p(TOD+DAY)lam(.)"                 =p_TOD_DAY_lam_dot_P_kentucki_pcount,
+  "p(ROC+TOD)lam(.)"                 =p_ROC_TOD_lam_dot_P_kentucki_pcount,
+  "p(CWD+TOD)lam(.)"                 =p_CWD_TOD_lam_dot_P_kentucki_pcount,
+  "p(CWD+DAY)lam(.)"                 =p_CWD_DAY_lam_dot_P_kentucki_pcount,
+  "p(CWD+LUX)lam(.)"                 =p_CWD_LUX_lam_dot_P_kentucki_pcount,
+  "p(ROC+LUX+DAY+CWD+TOD+LLD) lam(.)"=p_ROC_LUX_DAY_CWD_TOD_LLD_lam_dot_P_kentucki_pcount)
+modSel(P.kentucki.det.list)
+```
+# estimating betas of P. kentucki detection (Pcount)
+```{r, estimating beta: P. kentucki detection (Pcount)}
+p.kentucki_det_occu_model_list=list(
+ p_dot_lam_dot_P_kentucki_pcount,
+ p_ROC_lam_dot_P_kentucki_pcount,
+ p_LUX_lam_dot_P_kentucki_pcount,
+ p_DAY_lam_dot_P_kentucki_pcount,
+ p_TOD_lam_dot_P_kentucki_pcount,
+ p_LLD_lam_dot_P_kentucki_pcount,
+ p_CWD_lam_dot_P_kentucki_pcount,
+ p_ROC_CWD_lam_dot_P_kentucki_pcount,
+ p_TOD_DAY_lam_dot_P_kentucki_pcount,
+ p_ROC_TOD_lam_dot_P_kentucki_pcount,
+ p_CWD_TOD_lam_dot_P_kentucki_pcount,
+ p_CWD_DAY_lam_dot_P_kentucki_pcount,
+ p_CWD_LUX_lam_dot_P_kentucki_pcount,
+ p_ROC_LUX_DAY_CWD_TOD_LLD_lam_dot_P_kentucki_pcount)
+
+p.kentucki_det_occu_model_names=c(
+ "p(.)lam(.)",
+  "p(ROC)lam(.)",
+  "p(LUX)lam(.)",
+  "p(DAY)lam(.)",
+  "p(TOD)lam(.)",
+  "p(LLD)lam(.)",
+  "p(CWD)lam(.)",
+  "p(ROC+CWD)lam(.)",
+  "p(TOD+DAY)lam(.)",
+  "p(ROC+TOD)lam(.)",
+  "p(CWD+TOD)lam(.)",
+  "p(CWD+DAY)lam(.)",
+  "p(CWD+LUX)lam(.)",
+  "p(ROC+LUX+DAY+CWD+TOD+LLD) lam(.)")
+
+modavg(cand.set = p.kentucki_det_occu_model_list, 
+             modnames = p.kentucki_det_occu_model_names, 
+             parm="CWD", parm.type="detect")
+modavg(cand.set = p.kentucki_det_occu_model_list, 
+             modnames = p.kentucki_det_occu_model_names, 
+             parm="ROC", parm.type="detect")
+modavg(cand.set = p.kentucki_det_occu_model_list, 
+             modnames = p.kentucki_det_occu_model_names, 
+             parm="LUX", parm.type="detect")
+modavg(cand.set = p.kentucki_det_occu_model_list, 
+             modnames = p.kentucki_det_occu_model_names, 
+             parm="LLD", parm.type="detect")
+modavg(cand.set = p.kentucki_det_occu_model_list, 
+             modnames = p.kentucki_det_occu_model_names, 
+             parm="DAY", parm.type="detect")
+modavg(cand.set = p.kentucki_det_occu_model_list, 
+             modnames = p.kentucki_det_occu_model_names, 
+             parm="TOD", parm.type="detect")
+```
+# Beta estimates for P. kentucki detection (pcount)
+```{r, Beta estimates for P. kentucki detection (occu)}
+# CWD*:
+# Model-averaged estimate with shrinkage: 0.52 
+# Unconditional SE: 0.17 
+# 95% Unconditional confidence interval: 0.19, 0.85
+
+# ROC:
+# Model-averaged estimate with shrinkage: 0.26 
+# Unconditional SE: 0.24 
+# 95% Unconditional confidence interval: -0.22, 0.74
+
+# LUX:
+# Model-averaged estimate with shrinkage: 0 
+# Unconditional SE: 0.04 
+# 95% Unconditional confidence interval: -0.08, 0.08
+
+# LLD:
+# Model-averaged estimate with shrinkage: 0 
+# Unconditional SE: 0.02 
+# 95% Unconditional confidence interval: -0.03, 0.03
+
+# Day:
+# Model-averaged estimate with shrinkage: 0 
+# Unconditional SE: 0.04 
+# 95% Unconditional confidence interval: -0.08, 0.07
+
+# TOD:
+# Model-averaged estimate with shrinkage: 0.01 
+# Unconditional SE: 0.05 
+# 95% Unconditional confidence interval: -0.08, 0.09
+
+# CWD was the only detection covariate with a beta 95% CI that doesn't span "0", therefore P. kentucki abundance models with feature on CWD. 
+```
+
+
+```{r, N-mixture for P. kentucki, results="hide"}
+p_dot_lam_dot_P_kentucki_pcount=pcount(~1 ~1, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_dot_lam_CAN_P_kentucki_pcount=pcount(~1 ~CAN, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_dot_lam_ELV_P_kentucki_pcount=pcount(~1 ~ELV, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_dot_lam_ASP_P_kentucki_pcount=pcount(~1 ~ASP, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_dot_lam_MST_P_kentucki_pcount=pcount(~1 ~MST, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_dot_lam_VEG_P_kentucki_pcount=pcount(~1 ~VEG, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_dot_lam_TPI_P_kentucki_pcount=pcount(~1 ~TPI, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_dot_lam_RAD_P_kentucki_pcount=pcount(~1 ~RAD, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+
+p_CWD_lam_CAN_P_kentucki_pcount=pcount(~CWD ~CAN, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_CWD_lam_ASP_P_kentucki_pcount=pcount(~CWD ~ASP, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_CWD_lam_ELV_P_kentucki_pcount=pcount(~CWD ~ELV, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_CWD_lam_MST_P_kentucki_pcount=pcount(~CWD ~MST, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_CWD_lam_VEG_P_kentucki_pcount=pcount(~CWD ~VEG, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_CWD_lam_TPI_P_kentucki_pcount=pcount(~CWD ~TPI, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+p_CWD_lam_RAD_P_kentucki_pcount=pcount(~CWD ~RAD, data=P_kentucki_pcount, K_kent, control=list(trace=T, REPORT=100))
+
+p_CWD_lam_CAN_MST_ASP_ELV_VEG_TPI_RAD_P_kentucki_pcount=pcount(~CWD ~CAN+MST+ELV+ASP+VEG+TPI+RAD, K_kent, data=P_kentucki_pcount, control=list(trace=T, REPORT=100))
+```
+
+```{r, # Model Selection for P. kentucki N-mixture models}
+P.kentucki.pcount.list <- fitList(
+  "p(.)lam(.)"=p_dot_lam_dot_P_kentucki_pcount,
+  "p(.)lam(CAN)"=p_dot_lam_CAN_P_kentucki_pcount,
+  "p(.)lam(ELV)"=p_dot_lam_ELV_P_kentucki_pcount,
+  "p(.)lam(ASP)"=p_dot_lam_ASP_P_kentucki_pcount,
+  "p(.)lam(MST)"=p_dot_lam_MST_P_kentucki_pcount,
+  "p(.)lam(VEG)"=p_dot_lam_VEG_P_kentucki_pcount,
+  "p(.)lam(TPI)"=p_dot_lam_TPI_P_kentucki_pcount,
+  "p(.)lam(RAD)"=p_dot_lam_RAD_P_kentucki_pcount,
+
+  "p(CWD)lam(CAN)"=p_CWD_lam_CAN_P_kentucki_pcount,
+  "p(CWD)lam(ASP)"=p_CWD_lam_ASP_P_kentucki_pcount,
+  "p(cWD)lam(ELV)"=p_CWD_lam_ELV_P_kentucki_pcount,
+  "p(CWD)lam(MST)"=p_CWD_lam_MST_P_kentucki_pcount,
+  "p(CWD)lam(VEG)"=p_CWD_lam_VEG_P_kentucki_pcount,
+  "p(CWD)lam(TPI)"=p_CWD_lam_TPI_P_kentucki_pcount,
+  "p(CWD)lam(RAD)"=p_CWD_lam_RAD_P_kentucki_pcount,
+
+
+  "p(CWD)lam(CAN+MST+ASP+ELV+VEG+TPI+RAD)"=p_CWD_lam_CAN_MST_ASP_ELV_VEG_TPI_RAD_P_kentucki_pcount)
+modSel(P.kentucki.pcount.list)
+```
+
+# Estimating betas for P. kentucki detection (Pcount)
+```{r, Estimating betas for P. kentucki (Pcount)}
+p.kentucki.det.lam.list=list(
+p_dot_lam_dot_P_kentucki_pcount,
+p_dot_lam_CAN_P_kentucki_pcount,
+p_dot_lam_ELV_P_kentucki_pcount,
+p_dot_lam_ASP_P_kentucki_pcount,
+p_dot_lam_MST_P_kentucki_pcount,
+p_dot_lam_VEG_P_kentucki_pcount,
+p_dot_lam_TPI_P_kentucki_pcount,
+p_dot_lam_RAD_P_kentucki_pcount,
+
+p_CWD_lam_dot_P_kentucki_pcount,
+p_CWD_lam_CAN_P_kentucki_pcount,
+p_CWD_lam_ASP_P_kentucki_pcount,
+p_CWD_lam_ELV_P_kentucki_pcount,
+p_CWD_lam_MST_P_kentucki_pcount,
+p_CWD_lam_VEG_P_kentucki_pcount,
+p_CWD_lam_TPI_P_kentucki_pcount,
+p_CWD_lam_RAD_P_kentucki_pcount,
+
+p_CWD_lam_CAN_MST_ASP_ELV_VEG_TPI_RAD_P_kentucki_pcount)
+
+p.kentucki.det.lam.names=c(
+  "p(.)lam(.)",
+  "p(.)lam(CAN)"      ,
+  "p(.)lam(ELV)"      ,
+  "p(.)lam(ASP)"      ,
+  "p(.)lam(MST)"      ,
+  "p(.)lam(VEG)"      ,
+  "p(.)lam(TPI)"      ,
+  "p(.)lam(RAD)"      ,
+
+  "p(CWD)lam(.)"      ,
+  "p(CWD)lam(CAN)"    ,
+  "p(CWD)lam(ASP)"    ,
+  "p(cWD)lam(ELV)"    ,
+  "p(CWD)lam(MST)"    ,
+  "p(CWD)lam(VEG)"    ,
+  "p(CWD)lam(TPI)"    ,
+  "p(CWD)lam(RAD)"    ,
+
+  "p(CWD)lam(CAN+MST+ASP+ELV)")
+
+ASP.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="ASP", parm.type="lambda")
+MST.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="MST", parm.type="lambda")
+CAN.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="CAN", parm.type="lambda")
+ELV.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="ELV", parm.type="lambda")
+VEG.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="VEG", parm.type="lambda")
+TPI.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="TPI", parm.type="lambda")
+RAD.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="RAD", parm.type="lambda")
+
+ASP.beta.ken.pcount
+MST.beta.ken.pcount
+CAN.beta.ken.pcount
+ELV.beta.ken.pcount
+VEG.beta.ken.pcount
+TPI.beta.ken.pcount
+RAD.beta.ken.pcount
+```
+# Beta estimates from P. kentucki N-mixture models
+```{r, Beta estimates from P. kentucki N-mixture models}
+# ASP
+# Model-averaged estimate with shrinkage: 0 
+# Unconditional SE: 0.04 
+# 95% Unconditional confidence interval: -0.08, 0.08
+
+# MST:
+# Model-averaged estimate with shrinkage: 0.02 
+# Unconditional SE: 0.08 
+# 95% Unconditional confidence interval: -0.14, 0.17
+
+# CAN:
+# Model-averaged estimate with shrinkage: -0.25 
+# Unconditional SE: 0.31 
+# 95% Unconditional confidence interval: -0.86, 0.35
+
+# ELV:
+# Model-averaged estimate with shrinkage: 0 
+# Unconditional SE: 0.03 
+# 95% Unconditional confidence interval: -0.06, 0.07
+
+# VEG
+# Model-averaged estimate with shrinkage: 0 
+# Unconditional SE: 0.04 
+# 95% Unconditional confidence interval: -0.08, 0.08
+
+# TPI
+# Model-averaged estimate with shrinkage: -0.14 
+# Unconditional SE: 0.21 
+# 95% Unconditional confidence interval: -0.56, 0.27
+
+
+# RAD
+# Model-averaged estimate with shrinkage: 0 
+# Unconditional SE: 0.03 
+# 95% Unconditional confidence interval: -0.06, 0.05
+
+# All betas span "0", canopy openness is the closest parameter to haveing no sign chang, after that, TPI. Might as well run this with a two-parameter model...
+```
+
+# Round two of Model Selection for P. kentucki N-mixture models -- now with a two-covar model
+```{r, Round two of Model Selection for P. kentucki N-mixture models -- now with a two-covar model}
+p_CWD_lam_CAN_TPI_P_kentucki_pcount=pcount(~CWD ~CAN+TPI, data=P_kentucki_pcount, K=K_kent, control=list(trace=T, REPORT=100))
+
+P.kentucki.pcount.list <- fitList(
+  "p(.)lam(.)"=p_dot_lam_dot_P_kentucki_pcount,
+  "p(.)lam(CAN)"=p_dot_lam_CAN_P_kentucki_pcount,
+  "p(.)lam(ELV)"=p_dot_lam_ELV_P_kentucki_pcount,
+  "p(.)lam(ASP)"=p_dot_lam_ASP_P_kentucki_pcount,
+  "p(.)lam(MST)"=p_dot_lam_MST_P_kentucki_pcount,
+  "p(.)lam(VEG)"=p_dot_lam_VEG_P_kentucki_pcount,
+  "p(.)lam(TPI)"=p_dot_lam_TPI_P_kentucki_pcount,
+  "p(.)lam(RAD)"=p_dot_lam_RAD_P_kentucki_pcount,
+
+  "p(CWD)lam(CAN)"=p_CWD_lam_CAN_P_kentucki_pcount,
+  "p(CWD)lam(ASP)"=p_CWD_lam_ASP_P_kentucki_pcount,
+  "p(cWD)lam(ELV)"=p_CWD_lam_ELV_P_kentucki_pcount,
+  "p(CWD)lam(MST)"=p_CWD_lam_MST_P_kentucki_pcount,
+  "p(CWD)lam(VEG)"=p_CWD_lam_VEG_P_kentucki_pcount,
+  "p(CWD)lam(TPI)"=p_CWD_lam_TPI_P_kentucki_pcount,
+  "p(CWD)lam(RAD)"=p_CWD_lam_RAD_P_kentucki_pcount,
+
+  "p(CWD)lam(CAN+TPI)"=p_CWD_lam_CAN_TPI_P_kentucki_pcount,
+
+  "p(CWD)lam(CAN+MST+ASP+ELV+VEG+TPI+RAD)"=p_CWD_lam_CAN_MST_ASP_ELV_VEG_TPI_RAD_P_kentucki_pcount)
+modSel(P.kentucki.pcount.list)
+```
+
+# Estimating betas for P. kentucki detection (occu)
+```{r, Estimating betas for P. kentucki (occu)}
+p.kentucki.det.lam.list=list(
+p_dot_lam_dot_P_kentucki_pcount,
+p_dot_lam_CAN_P_kentucki_pcount,
+p_dot_lam_ELV_P_kentucki_pcount,
+p_dot_lam_ASP_P_kentucki_pcount,
+p_dot_lam_MST_P_kentucki_pcount,
+p_dot_lam_VEG_P_kentucki_pcount,
+p_dot_lam_TPI_P_kentucki_pcount,
+p_dot_lam_RAD_P_kentucki_pcount,
+
+p_CWD_lam_dot_P_kentucki_pcount,
+p_CWD_lam_CAN_P_kentucki_pcount,
+p_CWD_lam_ASP_P_kentucki_pcount,
+p_CWD_lam_ELV_P_kentucki_pcount,
+p_CWD_lam_MST_P_kentucki_pcount,
+p_CWD_lam_VEG_P_kentucki_pcount,
+p_CWD_lam_TPI_P_kentucki_pcount,
+p_CWD_lam_RAD_P_kentucki_pcount,
+
+p_CWD_lam_CAN_TPI_P_kentucki_pcount,
+
+p_CWD_lam_CAN_MST_ASP_ELV_VEG_TPI_RAD_P_kentucki_pcount)
+
+p.kentucki.det.lam.names=c(
+  "p(.)lam(.)",
+  "p(.)lam(CAN)"      ,
+  "p(.)lam(ELV)"      ,
+  "p(.)lam(ASP)"      ,
+  "p(.)lam(MST)"      ,
+  "p(.)lam(VEG)"      ,
+  "p(.)lam(TPI)"      ,
+  "p(.)lam(RAD)"      ,
+
+  "p(CWD)lam(.)"      ,
+  "p(CWD)lam(CAN)"    ,
+  "p(CWD)lam(ASP)"    ,
+  "p(cWD)lam(ELV)"    ,
+  "p(CWD)lam(MST)"    ,
+  "p(CWD)lam(VEG)"    ,
+  "p(CWD)lam(TPI)"    ,
+  "p(CWD)lam(RAD)"    ,
+  
+  "p(CWD)lam(CAN+MST+ASP+ELV+VEG+TPI+RAD)",
+
+  "p(CWD)lam(CAN+MST+ASP+ELV)")
+
+ASP.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="ASP", parm.type="lambda")
+MST.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="MST", parm.type="lambda")
+CAN.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="CAN", parm.type="lambda")
+ELV.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="ELV", parm.type="lambda")
+VEG.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="VEG", parm.type="lambda")
+TPI.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="TPI", parm.type="lambda")
+RAD.beta.ken.pcount<-modavg(cand.set = p.kentucki.det.lam.list, 
+             modnames = p.kentucki.det.lam.names, 
+             parm="RAD", parm.type="lambda")
+
+ASP.beta.ken.pcount
+MST.beta.ken.pcount
+CAN.beta.ken.pcount
+ELV.beta.ken.pcount
+VEG.beta.ken.pcount
+TPI.beta.ken.pcount
+RAD.beta.ken.pcount
+```
+
+# Simultaneous model averaging and back tranformation of P. kentucki N-mixture models!!
+```{r, Simultaneous model averaging and back tranformation of P. kentucki N-mixture models!!}
+P.kentucki.lam.modavg=predict(P.kentucki.pcount.list, type="state")
+P.ken.det.lam.modavg=predict(P.kentucki.pcount.list, type="det")
+summary(P.kentucki.lam.modavg)
+boxplot(P.kentucki.lam.modavg$Predicted)
+plot(CAN, P.kentucki.lam.modavg$Predicted, ylab="ModAvg P. kentucki Abundance")
+plot(MST, P.kentucki.lam.modavg$Predicted, ylab="ModAvg P. kentucki Abundance")
+plot(ELV, P.kentucki.lam.modavg$Predicted, ylab="ModAvg P. kentucki Abundance")
+plot(ASP, P.kentucki.lam.modavg$Predicted, ylab="ModAvg P. kentucki Abundance")
+plot(VEG, P.kentucki.lam.modavg$Predicted, ylab="ModAvg P. kentucki Abundance")
+plot(TPI, P.kentucki.lam.modavg$Predicted, ylab="ModAvg P. kentucki Abundance")
+plot(RAD, P.kentucki.lam.modavg$Predicted, ylab="ModAvg P. kentucki Abundance")
+```
+
+```{r, Modeling P. kentucki OCCUPANCY: begin with detection probability, results="hide"}
+p_dot_psi_dot_P_kentucki_occu=occu(~1 ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_ROC_psi_dot_P_kentucki_occu=occu(~ROC ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_LUX_psi_dot_P_kentucki_occu=occu(~LUX ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_DAY_psi_dot_P_kentucki_occu=occu(~DAY ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_TOD_psi_dot_P_kentucki_occu=occu(~TOD ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_LLD_psi_dot_P_kentucki_occu=occu(~LLD ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_CWD_psi_dot_P_kentucki_occu=occu(~CWD ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_ROC_CWD_psi_dot_P_kentucki_occu=occu(~ROC+CWD ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_TOD_DAY_psi_dot_P_kentucki_occu=occu(~TOD+DAY ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_ROC_TOD_psi_dot_P_kentucki_occu=occu(~ROC+TOD ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_CWD_TOD_psi_dot_P_kentucki_occu=occu(~CWD+TOD ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_CWD_DAY_psi_dot_P_kentucki_occu=occu(~CWD+DAY ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_CWD_LUX_psi_dot_P_kentucki_occu=occu(~CWD+LUX ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_ROC_LUX_DAY_CWD_TOD_LLD_psi_dot_P_kentucki_occu=occu(~CWD+LUX+ROC+TOD+LLD+DAY ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+```
+# Create candidate model list for AIC selection of P. kentucki detection (occu)
+```{r, Create candidate model list for AIC selection of P. kentucki detection (occu)}
+P.kentucki.det.occu.list=fitList(
+  "p(.)psi(.)"                       =p_dot_psi_dot_P_kentucki_occu,
+  "p(ROC)psi(.)"                     =p_ROC_psi_dot_P_kentucki_occu,
+  "p(LUX)psi(.)"                     =p_LUX_psi_dot_P_kentucki_occu,
+  "p(DAY)psi(.)"                     =p_DAY_psi_dot_P_kentucki_occu,
+  "p(TOD)psi(.)"                     =p_TOD_psi_dot_P_kentucki_occu,
+  "p(LLD)psi(.)"                     =p_LLD_psi_dot_P_kentucki_occu,
+  "p(CWD)psi(.)"                     =p_CWD_psi_dot_P_kentucki_occu,
+  "p(ROC+CWD)psi(.)"                 =p_ROC_CWD_psi_dot_P_kentucki_occu,
+  "p(TOD+DAY)psi(.)"                 =p_TOD_DAY_psi_dot_P_kentucki_occu,
+  "p(ROC+TOD)psi(.)"                 =p_ROC_TOD_psi_dot_P_kentucki_occu,
+  "p(CWD+TOD)psi(.)"                 =p_CWD_TOD_psi_dot_P_kentucki_occu,
+  "p(CWD+DAY)psi(.)"                 =p_CWD_DAY_psi_dot_P_kentucki_occu,
+  "p(CWD+LUX)psi(.)"                 =p_CWD_LUX_psi_dot_P_kentucki_occu,
+  "p(ROC+LUX+DAY+CWD+TOD+LLD) psi(.)"=p_ROC_LUX_DAY_CWD_TOD_LLD_psi_dot_P_kentucki_occu)
+modSel(P.kentucki.det.occu.list)
+```
+# Estimating beta of P. kentucki detection (occu)
+```{r, Estimating beta of P. kentucki detection (occu)}
+p.kentucki_det_occu_list=list(
+  p_dot_psi_dot_P_kentucki_occu,
+  p_ROC_psi_dot_P_kentucki_occu,
+  p_LUX_psi_dot_P_kentucki_occu,
+  p_DAY_psi_dot_P_kentucki_occu,
+  p_TOD_psi_dot_P_kentucki_occu,
+  p_LLD_psi_dot_P_kentucki_occu,
+  p_CWD_psi_dot_P_kentucki_occu,
+  p_ROC_CWD_psi_dot_P_kentucki_occu,
+  p_TOD_DAY_psi_dot_P_kentucki_occu,
+  p_ROC_TOD_psi_dot_P_kentucki_occu,
+  p_CWD_TOD_psi_dot_P_kentucki_occu,
+  p_CWD_DAY_psi_dot_P_kentucki_occu,
+  p_CWD_LUX_psi_dot_P_kentucki_occu,
+  p_ROC_LUX_DAY_CWD_TOD_LLD_psi_dot_P_kentucki_occu)
+p.kentucki_det_occu_list_names=c(
+  "p(.)psi(.)",
+  "p(ROC)psi(.)",
+  "p(LUX)psi(.)",
+  "p(DAY)psi(.)",
+  "p(TOD)psi(.)",
+  "p(LLD)psi(.)",
+  "p(CWD)psi(.)",
+  "p(ROC+CWD)psi(.)",
+  "p(TOD+DAY)psi(.)",
+  "p(ROC+TOD)psi(.)",
+  "p(CWD+TOD)psi(.)",
+  "p(CWD+DAY)psi(.)",
+  "p(CWD+LUX)psi(.)",
+  "p(ROC+LUX+DAY+CWD+TOD+LLD) psi(.)")
+
+modavg(cand.set = p.kentucki_det_occu_list, 
+             modnames = p.kentucki_det_occu_list_names, 
+             parm="ROC", parm.type="detect")
+modavg(cand.set = p.kentucki_det_occu_list, 
+             modnames = p.kentucki_det_occu_list_names, 
+             parm="CWD", parm.type="detect")
+modavg(cand.set = p.kentucki_det_occu_list, 
+             modnames = p.kentucki_det_occu_list_names, 
+             parm="TOD", parm.type="detect")
+modavg(cand.set = p.kentucki_det_occu_list, 
+             modnames = p.kentucki_det_occu_list_names, 
+             parm="DAY", parm.type="detect")
+modavg(cand.set = p.kentucki_det_occu_list, 
+             modnames = p.kentucki_det_occu_list_names, 
+             parm="LLD", parm.type="detect")
+modavg(cand.set = p.kentucki_det_occu_list, 
+             modnames = p.kentucki_det_occu_list_names, 
+             parm="LUX", parm.type="detect")
+```
+# Model averaged beta estimates with shrinkage for P. kentucki occupancy models
+```{r, Model averaged beta estimates with shrinkage for P. kentucki occupancy models}
+# LUX:
+# Model-averaged estimate with shrinkage: 0 
+# Unconditional SE: 0.06 
+# 95% Unconditional confidence interval: -0.13, 0.13
+
+# LLD:
+# Model-averaged estimate with shrinkage: 0 
+# Unconditional SE: 0.03 
+# 95% Unconditional confidence interval: -0.05, 0.05
+
+# DAY:
+# Model-averaged estimate with shrinkage: -0.02 
+# Unconditional SE: 0.08 
+# 95% Unconditional confidence interval: -0.18, 0.14
+
+# TOD:
+# Model-averaged estimate with shrinkage: 0.05 
+# Unconditional SE: 0.14 
+# 95% Unconditional confidence interval: -0.21, 0.32
+
+# CWD*:
+# Model-averaged estimate with shrinkage: 0.74 
+# Unconditional SE: 0.21 
+# 95% Unconditional confidence interval: 0.33, 1.15
+
+# ROC:
+# Model-averaged estimate with shrinkage: 0.09 
+# Unconditional SE: 0.18 
+# 95% Unconditional confidence interval: -0.27, 0.45
+
+# CWD was the only covariate with beta values no spanning "0", therefore, P. kentucki occupancy models will feature only CWD
+```
+
+# Constructing occupancy models for P. kentucki
+```{r, Constructing occupancy models for P. kentucki, results="hide"}
+p_dot_psi_dot_kentucki_occu=occu(~1 ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+
+p_dot_psi_CAN_kentucki_occu=occu(~1 ~CAN, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_ELV_kentucki_occu=occu(~1 ~ELV, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_ASP_kentucki_occu=occu(~1 ~ASP, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+#p_dot_psi_MST_kentucki_occu=occu(~1 ~MST, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_VEG_kentucki_occu=occu(~1 ~VEG, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_dot_psi_TPI_kentucki_occu=occu(~1 ~TPI, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+#p_dot_psi_RAD_kentucki_occu=occu(~1 ~RAD, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+
+p_CWD_psi_dot_kentucki_occu=occu(~CWD ~1, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_CWD_psi_CAN_kentucki_occu=occu(~CWD ~CAN, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_CWD_psi_ASP_kentucki_occu=occu(~CWD ~ASP, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_CWD_psi_ELV_kentucki_occu=occu(~CWD ~ELV, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_CWD_psi_MST_kentucki_occu=occu(~CWD ~MST, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_CWD_psi_VEG_kentucki_occu=occu(~CWD ~VEG, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+#p_CWD_psi_TPI_kentucki_occu=occu(~CWD ~TPI, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+p_CWD_psi_RAD_kentucki_occu=occu(~CWD ~RAD, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+
+p_CWD_psi_CAN_ASP_ELV_MST_VEG_TPI_RAD_kentucki_occu=occu(~CWD ~CAN+ASP+ELV+MST+VEG+TPI+RAD, data=P_kentucki_occu, control=list(trace=T, REPORT=100))
+```
+
+# Create new candidate model fitlist for AIC selection of P. kentucki occupancy models
+```{r}
+P.kentucki.occu.list.2=fitList(
+  "p(.) psi(.)" = p_dot_psi_dot_kentucki_occu,
+  "p(.) psi(CAN)" = p_dot_psi_CAN_kentucki_occu,
+  "p(.) psi(ELV)" = p_dot_psi_ELV_kentucki_occu,
+  #"p(.) psi(ASP)" = p_dot_psi_ASP_kentucki_occu,
+  "p(.) psi(VEG)" = p_dot_psi_VEG_kentucki_occu,
+  #"p(.) psi(TPI)" = p_dot_psi_TPI_kentucki_occu,
+
+  "p(CWD) psi(.)" = p_CWD_psi_dot_kentucki_occu,
+  "p(CWD) psi(CAN)" = p_CWD_psi_CAN_kentucki_occu,
+  #"p(CWD) psi(ASP)" = p_CWD_psi_ASP_kentucki_occu,
+  #"p(CWD) psi(ELV)" = p_CWD_psi_ELV_kentucki_occu,
+  "p(CWD) psi(MST)" = p_CWD_psi_MST_kentucki_occu,
+  "p(CWD) psi(VEG)" = p_CWD_psi_VEG_kentucki_occu
+  #"p(CWd) psi(RAD)" = p_CWD_psi_RAD_kentucki_occu,
+
+  #"p(CWD) psi(CAN+ASP+ELV+MST+VEG+RAD)" = p_CWD_psi_CAN_ASP_ELV_MST_VEG_TPI_RAD_kentucki_occu)
+)
+modSel(P.kentucki.occu.list.2)
+```
+
+# Estimating Beta values for P. kentucki occupancy parameters
+```{r, Estimating Beta values for P. kentucki occupancy}
+P.kentucki.occupancy.model.list<-list(
+p_dot_psi_dot_kentucki_occu,
+p_dot_psi_CAN_kentucki_occu,
+p_dot_psi_ELV_kentucki_occu,
+#p_dot_psi_ASP_kentucki_occu,
+p_dot_psi_VEG_kentucki_occu,
+#p_dot_psi_TPI_kentucki_occu,
+
+p_CWD_psi_dot_kentucki_occu,
+p_CWD_psi_CAN_kentucki_occu,
+#p_CWD_psi_ASP_kentucki_occu,
+#p_CWD_psi_ELV_kentucki_occu,
+p_CWD_psi_MST_kentucki_occu,
+p_CWD_psi_VEG_kentucki_occu
+#p_CWD_psi_RAD_kentucki_occu
+
+#p_TOD_psi_CAN_ASP_ELV_MST_VEG_TPI_RAD_kentucki_occu
+)
+P.kentucki.occupancy.model.names<-c(
+  "p(.) psi(.)" ,
+  "p(.) psi(CAN)" ,
+  "p(.) psi(ELV)" ,
+# "p(.) psi(ASP)" ,
+  "p(.) psi(VEG)" ,
+# "p(.) psi(TPI)" ,
+
+  "p(CWD) psi(.)" ,
+  "p(CWD) psi(CAN)" ,
+# "p(CWD) psi(ASP)" ,
+# "p(CWD) psi(ELV)" ,
+"p(CWD) psi(MST)" ,
+  "p(CWD) psi(VEG)" 
+# "p(CWD) psi(RAD)"
+
+#  "p(CWD) psi(CAN+ASP+ELV+MST+VEG+RAD)" 
+)
+
+MST.beta.ken.occu<-modavg(cand.set = P.kentucki.occupancy.model.list, 
+             modnames = P.kentucki.occupancy.model.names, 
+             parm="MST", parm.type="psi")
+CAN.beta.ken.occu<-modavg(cand.set = P.kentucki.occupancy.model.list, 
+             modnames = P.kentucki.occupancy.model.names, 
+             parm="CAN", parm.type="psi")
+ELV.beta.ken.occu<-modavg(cand.set = P.kentucki.occupancy.model.list, 
+             modnames = P.kentucki.occupancy.model.names, 
+             parm="ELV", parm.type="psi")
+VEG.beta.ken.occu<-modavg(cand.set = P.kentucki.occupancy.model.list, 
+             modnames = P.kentucki.occupancy.model.names, 
+             parm="VEG", parm.type="psi")
+
+MST.beta.ken.occu
+CAN.beta.ken.occu
+ELV.beta.ken.occu
+VEG.beta.ken.occu
+```
+
+# Model averaged beta estimates of P. kentucki occupancy with shrinkage
+```{r, Model averaged beta estimates of P. kentucki occupancy with shrinkage}
+# CAN:
+# Model-averaged estimate with shrinkage: -0.02 
+# Unconditional SE: 0.17 
+# 95% Unconditional confidence interval: -0.35, 0.31
+
+# MST:
+# Model-averaged estimate with shrinkage: 0.86 
+# Unconditional SE: 1.49 
+# 95% Unconditional confidence interval: -2.07, 3.79
+
+# ELV:
+# Model-averaged estimate with shrinkage: 0 
+# Unconditional SE: 0.07 
+# 95% Unconditional confidence interval: -0.14, 0.15
+
+# VEG
+# Model-averaged estimate with shrinkage: 0.03 
+# Unconditional SE: 0.27 
+# 95% Unconditional confidence interval: -0.51, 0.56
+
+# RAD
+# Model-averaged estimate with shrinkage: 0 
+# Unconditional SE: 0.12 
+# 95% Unconditional confidence interval: -0.23, 0.23
+
+# No betas indicate an effect of site level covariates
+```
+
+# Simultaneous backtransformation and modelaveraging of occupancy models for P. kentucki:
+```{r, Plotting P. richmondi occupancy}
+P.kentucki.psi.modavg=predict(P.kentucki.occu.list.2, type="state")
+P.kentucki.det.psi.modavg=predict(P.kentucki.occu.list.2, type="det")
+summary(P.kentucki.psi.modavg)
+boxplot(P.kentucki.psi.modavg$Predicted)
+plot(CAN, P.kentucki.psi.modavg$Predicted, frame=F, ylab="ModAvg P. kentucki Occupancy")
+plot(MST, P.kentucki.psi.modavg$Predicted, frame=F, ylab="ModAvg P. kentucki Occupancy")
+```
+
+# that's it... nothing else to see here...
+
+
